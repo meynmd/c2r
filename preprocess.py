@@ -14,9 +14,13 @@ def main(args):
         if not os.path.exists(out_dir):
             os.makedirs(out_dir)
         for fname in files:
-            print("preprocessing {}".format(fname), end="\r")
-            roll = preprocess(root + "/" + fname)
-            np.save(out_dir + "/" + fname, roll)
+            out_name = out_dir + "/" + fname
+            if os._exists(out_name):
+                print("{} already exists, skipping.".format(out_name))
+            else:
+                print("preprocessing {}".format(fname), end="\r")
+                roll = preprocess(root + "/" + fname)
+                np.save(out_name, roll)
 
 
 def preprocess(file):
