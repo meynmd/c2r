@@ -29,7 +29,7 @@ class Encoder(nn.Module):
         self.fc1 = nn.Linear(rnn_size, 100)
         self.fc2 = nn.Linear(100, num_categories)
 
-        if use_cuda:
+        if use_cuda is not None:
             self.use_cuda = use_cuda
         else:
             self.use_cuda = None
@@ -57,7 +57,7 @@ class Encoder(nn.Module):
 
         # del input
         x_batch = Variable(torch.cat(x_batch, 0))
-        if self.use_cuda:
+        if self.use_cuda is not None:
             x_batch = x_batch.cuda(self.use_cuda)
 
         features = F.relu(self.conv1(x_batch))
@@ -69,10 +69,7 @@ class Encoder(nn.Module):
         features = F.relu(self.batchnorm256(self.conv6(features)))
 
         all_channels = features.view(512*16, 1, -1).transpose(0, 2)
-        # del features
-        # del x_batch
         output, (hidden, _) = self.rnn(all_channels)
-        # del all_channels
         hidden = hidden.view(-1)
         out = F.relu(self.fc1(hidden))
         return self.fc2(out)

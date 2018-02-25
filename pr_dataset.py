@@ -45,3 +45,6 @@ class PianoRollDataset(Dataset):
     def get_x_count(self, y):
         return self.x_counts[y]
 
+    def get_y_count(self):
+        return len(self.x_counts)
+
