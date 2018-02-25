@@ -1,5 +1,6 @@
 import torch.nn as nn
-import cnn
+from junk import cnn
+
 
 class Model(nn.Module):
     def __init__(self, optim):

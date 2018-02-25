@@ -13,13 +13,18 @@ class PianoRollDataset(Dataset):
     def __init__(self, data_root, label_dict_file, phase="train"):
         self.root = data_root
         self.xy_s = []
+        self.x_counts = {}
+        with open(data_root + "/" + label_dict_file, "r") as fp:
+            name_num = [line.strip().split(",") for line in fp.readlines()]
+            self.name2idx = {n : int(i) for n, i in name_num}
+            self.idx2name = {int(i) : n for n, i in name_num}
         for d in os.listdir(data_root):
             filenames = glob.glob(data_root + "/" + d + "/" + phase + "/*.npy")
-            self.xy_s += [(f, d) for f in filenames]
-        with open(data_root + "/" + label_dict_file, "r") as fp:
-            name_num = [line.split(",") for line in fp.readlines()]
-            self.name2tensor = {n : self.idx2onehot(int(i), len(name_num)) for n, i in name_num}
-            self.idx2name = {i : n for n, i in name_num}
+            if filenames:
+                class_list = [(f, d) for f in filenames]
+                self.xy_s += class_list
+                self.x_counts[self.name2idx[d.replace("-", " ")]] = len(class_list)
+
 
     def __len__(self):
         return len(self.xy_s)
@@ -29,11 +34,14 @@ class PianoRollDataset(Dataset):
         x = torch.from_numpy(np.load(x_path))
         x = x.float()
         y = y.replace("-", " ")
-        y = self.name2tensor[y]
+        y = self.name2idx[y]
         return x, y
 
     def idx2onehot(self, idx, size):
         vec = torch.FloatTensor(size).fill_(0.)
         vec[idx] = 1.
         return vec
+
+    def get_x_count(self, y):
+        return self.x_counts[y]
 
