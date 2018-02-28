@@ -7,12 +7,11 @@ from torchvision.transforms import RandomCrop
 from torch import cuda
 
 class Encoder(nn.Module):
-    def __init__(self, num_categories, rnn_size=128, use_cuda=None, max_w=None):
+    def __init__(self, num_categories, batch_size, rnn_size=128, use_cuda=None, max_w=None):
         super(Encoder, self).__init__()
-        self.learning_rate = 1e-5
         self.max_w = max_w
         input_size = 512
-        self.conv1 = nn.Conv2d(1, 32, (3, 9), padding=(1, 3), stride=(1, 1))
+        self.conv1 = nn.Conv2d(1, 32, (3, 9), padding=(1, 4), stride=(1, 1))
         self.maxpool_square = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
         self.conv2 = nn.Conv2d(32, 64, (3, 3), padding=(1, 1), stride=(1, 1))
         self.conv3 = nn.Conv2d(64, 128, (3, 3), padding=(1, 1), stride=(1, 1))
@@ -24,7 +23,7 @@ class Encoder(nn.Module):
         self.conv6 = nn.Conv2d(256, 256, (3, 3), padding=(1, 1), stride=(1, 1))
 
         self.rnn = nn.LSTM(8192, rnn_size, num_layers=1, dropout=0, bidirectional=False)
-        self.pos_lut = nn.Embedding(1000, input_size)
+        # self.pos_lut = nn.Embedding(1000, input_size)
 
         self.fc1 = nn.Linear(rnn_size, 100)
         self.fc2 = nn.Linear(100, num_categories)
@@ -55,7 +54,6 @@ class Encoder(nn.Module):
                 tensor = self.random_crop(tensor, max_w)
             x_batch.append(tensor)
 
-        # del input
         x_batch = Variable(torch.cat(x_batch, 0))
         if self.use_cuda is not None:
             x_batch = x_batch.cuda(self.use_cuda)
@@ -68,9 +66,11 @@ class Encoder(nn.Module):
         features = self.maxpool_wide(F.relu(self.batchnorm256(self.conv5(features))))
         features = F.relu(self.batchnorm256(self.conv6(features)))
 
-        all_channels = features.view(512*16, 1, -1).transpose(0, 2)
-        output, (hidden, _) = self.rnn(all_channels)
-        hidden = hidden.view(-1)
+        # all_channels = features.view(256*32, 1, -1).transpose(0, 2)
+        rnn_in = features.view(batch_size, 256*32, -1).transpose(0, 2).transpose(1, 2)
+        # output, (hidden, _) = self.rnn(all_channels)
+        output, (hidden, _) = self.rnn(rnn_in)
+        hidden = hidden.view(batch_size, -1)
         out = F.relu(self.fc1(hidden))
         return self.fc2(out)
 

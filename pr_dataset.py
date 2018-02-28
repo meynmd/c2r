@@ -14,6 +14,7 @@ class PianoRollDataset(Dataset):
         self.root = data_root
         self.xy_s = []
         self.x_counts = {}
+        self.y2x = {}
         with open(data_root + "/" + label_dict_file, "r") as fp:
             name_num = [line.strip().split(",") for line in fp.readlines()]
             self.name2idx = {n : int(i) for n, i in name_num}
@@ -24,7 +25,7 @@ class PianoRollDataset(Dataset):
                 class_list = [(f, d) for f in filenames]
                 self.xy_s += class_list
                 self.x_counts[self.name2idx[d.replace("-", " ")]] = len(class_list)
-
+                self.y2x[d.replace("-", " ")] = class_list
 
     def __len__(self):
         return len(self.xy_s)
@@ -37,6 +38,14 @@ class PianoRollDataset(Dataset):
         y = self.name2idx[y]
         return x, y
 
+    def get_from_class(self, class_label):
+        for x_path, y in self.y2x[class_label]:
+            x = torch.from_numpy(np.load(x_path))
+            x = x.float()
+            y = y.replace("-", " ")
+            y = self.name2idx[y]
+            yield x, y
+
     def idx2onehot(self, idx, size):
         vec = torch.FloatTensor(size).fill_(0.)
         vec[idx] = 1.
@@ -47,4 +56,7 @@ class PianoRollDataset(Dataset):
 
     def get_y_count(self):
         return len(self.x_counts)
+
+    def get_all_labels(self):
+        return self.x_counts.keys()
 

@@ -42,7 +42,7 @@ def train(model, phase, dataloader, batch_size, loss_fn, optim, num_epochs=50, n
                 optim.zero_grad()
 
                 # run and calc loss
-                z = model(x).view(1, -1)
+                z = model(x)  # .view(1, -1)
                 loss = loss_fn(z, y)
                 running_loss += loss.data[0]
 
@@ -101,7 +101,7 @@ def main(opts):
     dataloaders = {
         p : DataLoader(
             datasets[p],
-            batch_size=opts.batch_size,
+            batch_size=opts.batch_size if p == "train" else 1,
             shuffle=True,
             num_workers=2,
             collate_fn=lambda b : list(list(l) for l in zip(*b))
@@ -109,7 +109,7 @@ def main(opts):
     }
 
     # set up the model
-    enc = encoder.Encoder(datasets["train"].get_y_count(), rnn_size=128, use_cuda=cuda_dev, max_w=opts.max_w)
+    enc = encoder.Encoder(datasets["train"].get_y_count(), opts.batch_size, rnn_size=128, use_cuda=cuda_dev, max_w=opts.max_w)
     if opts.load:
         enc.load_state_dict(torch.load(opts.load))
     if cuda_dev is not None:
