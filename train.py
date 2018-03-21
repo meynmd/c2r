@@ -2,6 +2,7 @@ import argparse
 import glob
 import os
 import sys
+import time
 import random
 import numpy as np
 
@@ -16,7 +17,7 @@ import pr_dataset
 
 
 def train(model, phase, dataloader, batch_size, loss_fn, optim, num_epochs=50, num_batches_val=1,
-          model_dir="model", beam_size=10, cuda_dev=None, learning_rate_init=1e-5, lr_decay=None,
+          model_dir="model_narrow", beam_size=10, cuda_dev=None, learning_rate_init=1e-5, lr_decay=None,
           start_decay_at=None):
 
     best_loss = float("inf")
@@ -32,6 +33,10 @@ def train(model, phase, dataloader, batch_size, loss_fn, optim, num_epochs=50, n
         # phases ["train", "val"], or ["val"]
         for phase in phases:
             running_loss, err = 0., 0
+            if phase == "train":
+                model.train()
+            else:
+                model.eval()
 
             # dataloader should provide whatever batch size was specified when instantiated
             for i, data in enumerate(dataloader[phase]):
@@ -57,18 +62,20 @@ def train(model, phase, dataloader, batch_size, loss_fn, optim, num_epochs=50, n
 
             # print progress
             avg_loss = running_loss / float(i + 1)
-            print("{} err: {:.0%}\t{} loss: {:.3}".format(
+            print("{} err: {:.0%}\t{} loss: {:.5}".format(
                 phase, err / float(i + 1), phase, avg_loss)
             )
 
             # save model if best so far, or every 100 epochs
             if phase == "val":
-                if avg_loss < best_loss or epoch % 99 == 0:
-                    if avg_loss < best_loss:
-                        best_loss = avg_loss
-                        save_name = "model_best".format(epoch + 1, avg_loss)
+                if avg_loss < best_loss:
+                    best_loss = avg_loss
+                    if epoch > 99:
+                        save_name = "model_epoch{}_loss{:.3}_".format(epoch + 1, avg_loss)
+                        save_name += "-".join(time.asctime().split(" ")[:-1]).replace(":", ".")
                     else:
-                        save_name = "model_epoch_{}_loss_{}".format(epoch + 1, avg_loss)
+                        save_name = "model_best".format(epoch + 1, avg_loss)
+                    save_name += "_rnn-size{}.pt".format(model.rnn_size)
                     save_path = "{}/{}".format(model_dir, save_name)
                     torch.save(model.state_dict(), save_path)
                     print("Model saved to {}".format(save_path))
@@ -109,7 +116,14 @@ def main(opts):
     }
 
     # set up the model
-    enc = encoder.Encoder(datasets["train"].get_y_count(), opts.batch_size, rnn_size=128, use_cuda=cuda_dev, max_w=opts.max_w)
+    enc = encoder.Encoder(
+        datasets["train"].get_y_count(),
+        opts.batch_size,
+        rnn_size=opts.rnn_size,
+        num_rnn_layers=opts.rnn_layers,
+        use_cuda=cuda_dev,
+        max_w=opts.max_w
+    )
     if opts.load:
         enc.load_state_dict(torch.load(opts.load))
     if cuda_dev is not None:
@@ -126,18 +140,19 @@ def main(opts):
     optim = torch.optim.SGD(enc.parameters(), lr=10**(-opts.init_lr), momentum=0.9)
 
     # train(model, phase, dataloader, batch_size, loss_fn, optim, num_epochs=50)
-    train(enc, "train", dataloaders, 1, lf, optim, opts.max_epochs, cuda_dev=cuda_dev)
+    train(enc, "train", dataloaders, 1, lf, optim, opts.max_epochs, cuda_dev=cuda_dev, model_dir=opts.model_dir)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--rnn_size", type=int, default=128)
+    parser.add_argument("--rnn_layers", type=int, default=3)
     parser.add_argument("--data_dir", default="preprocessed")
     parser.add_argument("--max_epochs", type=int, default=1000)
     parser.add_argument("--max_w", type=int, default=5000)
     parser.add_argument("--test", action="store_true")
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("-m", "--model_dir", default="model")
-    parser.add_argument("-e", "--num_epochs", type=int, default=5)
     parser.add_argument("--num_batch_valid", type=int, default=1)
     parser.add_argument("--beam_size", type=int, default=5)
     parser.add_argument("-s", "--seed", type=int, default=0)
