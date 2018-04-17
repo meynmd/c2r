@@ -16,6 +16,31 @@ import encoder
 import pr_dataset
 
 
+def random_crop(tensor, w_new, h_new=None):
+    h, w = tensor.shape[2], tensor.shape[3]
+    top, left = 0, 0
+    if w_new < w:
+        left = np.random.randint(0, w - w_new)
+    if h_new is None:
+        return tensor[:, :, :, left: left + w_new]
+    if h_new < h:
+        top = np.random.randint(0, h - h_new)
+    return tensor[top: top + h_new, left: left + w_new]
+
+
+def make_batch(tensors, max_w):
+    batch_size = len(tensors)
+    max_w = min(max_w, min(t.shape[1] for t in tensors))
+    x_batch = []
+    for tensor in tensors:
+        tensor = tensor.view(1, 1, tensor.shape[0], tensor.shape[1])
+        if tensor.shape[3] > max_w:
+            tensor = random_crop(tensor, max_w)
+        x_batch.append(tensor)
+
+    return Variable(torch.cat(x_batch, 0))
+
+
 def train(model, phase, dataloader, batch_size, loss_fn, optim, num_epochs=50, num_batches_val=1,
           model_dir="model_narrow", beam_size=10, cuda_dev=None, learning_rate_init=1e-5, lr_decay=None,
           start_decay_at=None):
@@ -44,10 +69,13 @@ def train(model, phase, dataloader, batch_size, loss_fn, optim, num_epochs=50, n
                 y = Variable(torch.LongTensor(y))
                 if cuda_dev is not None:
                     y = y.cuda(cuda_dev)
+
+                x = make_batch(x, model.max_w)
+
                 optim.zero_grad()
 
                 # run and calc loss
-                z = model(x)  # .view(1, -1)
+                z = model(x)
                 loss = loss_fn(z, y)
                 running_loss += loss.data[0]
 

@@ -39,17 +39,17 @@ class Encoder(nn.Module):
 
     def forward(self, input):
         batch_size = len(input)
-        max_w = min(self.max_w, min(t.shape[1] for t in input))
-        x_batch = []
-        for tensor in input:
-            tensor = tensor.view(1, 1, tensor.shape[0], tensor.shape[1])
-            if tensor.shape[3] > max_w:
-                tensor = self.random_crop(tensor, max_w)
-            x_batch.append(tensor)
-
-        x_batch = Variable(torch.cat(x_batch, 0))
+        # max_w = min(self.max_w, min(t.shape[1] for t in input))
+        # x_batch = []
+        # for tensor in input:
+        #     tensor = tensor.view(1, 1, tensor.shape[0], tensor.shape[1])
+        #     if tensor.shape[3] > max_w:
+        #         tensor = self.random_crop(tensor, max_w)
+        #     x_batch.append(tensor)
+        #
+        # x_batch = Variable(torch.cat(x_batch, 0))
         if self.use_cuda is not None:
-            x_batch = x_batch.cuda(self.use_cuda)
+            x_batch = input.cuda(self.use_cuda)
 
         features = F.relu(self.conv1(x_batch))
         features = self.maxpool_square(features)
@@ -58,26 +58,14 @@ class Encoder(nn.Module):
         features = self.maxpool_wide(F.relu(self.batchnorm128(self.conv4(features))))
         features = F.relu(self.batchnorm256(self.conv5(features)))
 
-        # all_channels = features.view(256*32, 1, -1).transpose(0, 2)
         rnn_in = features.view(batch_size, 256*features.data.shape[2], -1).transpose(0, 2).transpose(1, 2)
-        # output, (hidden, _) = self.rnn(all_channels)
-
         output, (hidden, _) = self.rnn(rnn_in)
-
-        # hidden = hidden[self.rnn_layers - 1]
-        # hidden : layer * direction, batch, hidden size
-
-        # hidden = hidden[self.rnn_layers - 1, :, :]
 
         hidden = hidden.view(batch_size, self.rnn_size)
         out = F.relu(self.fc1(hidden))
         out = F.relu(self.fc2(out))
         return self.fc3(out)
 
-        #
-        # out = F.relu(self.batchnorm1d(self.fc1(hidden)))
-        # out = F.relu(self.fc2(out))
-        # return self.fc3(out)
 
     def random_crop(self, tensor, w_new, h_new=None):
         h, w = tensor.shape[2], tensor.shape[3]
