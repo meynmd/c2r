@@ -43,8 +43,7 @@ class PianoRollDataset(Dataset):
             x = torch.from_numpy(np.load(x_path))
             x = x.float()
             y = y.replace("-", " ")
-            y = self.name2idx[y]
-            yield x, y
+            yield (x, self.name2idx[y]), (x_path, y)
 
     def idx2onehot(self, idx, size):
         vec = torch.FloatTensor(size).fill_(0.)

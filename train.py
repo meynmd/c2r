@@ -42,8 +42,8 @@ def make_batch(tensors, max_w):
 
 
 def train(model, phase, dataloader, batch_size, loss_fn, optim, num_epochs=50, num_batches_val=1,
-          model_dir="model_narrow", beam_size=10, cuda_dev=None, learning_rate_init=1e-5, lr_decay=None,
-          start_decay_at=None):
+              model_dir="model_narrow", beam_size=10, cuda_dev=None, learning_rate_init=1e-5, lr_decay=None,
+              start_decay_at=None):
 
     best_loss = float("inf")
     phases = [phase]

@@ -15,6 +15,18 @@ import encoder
 import pr_dataset
 
 
+def random_crop(tensor, w_new, h_new=None):
+    h, w = tensor.shape[0], tensor.shape[1]
+    top, left = 0, 0
+    if w_new < w:
+        left = np.random.randint(0, w - w_new)
+    if h_new is None:
+        return tensor[:, left : left + w_new]
+    if h_new < h:
+        top = np.random.randint(0, h - h_new)
+    return tensor[top : top + h_new, left : left + w_new]
+
+
 def test(model, data, num_per_class, cuda_dev):
     correct_total, xy_count = 0, 0
     labels = data.idx2name.items()
@@ -31,7 +43,10 @@ def test(model, data, num_per_class, cuda_dev):
         preds = np.zeros(num_classes)
         for x, y in class_datapoints[:num_d]:
             model.eval()
-            z = model([x])
+            if x.shape[1] > model.max_w:
+                x = random_crop(x, model.max_w)
+            x = x.unsqueeze(0).unsqueeze(0)
+            z = model(x)
             # record softmax "probabilities" for each label
             p = torch.nn.functional.softmax(z).cpu().data.numpy()
             probs = probs + p

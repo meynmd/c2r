@@ -13,7 +13,8 @@ class Encoder(nn.Module):
         self.rnn_layers = num_rnn_layers
         self.max_w = max_w
         self.batch_size = batch_size
-        self.conv1 = nn.Conv2d(1, 16, (3, 9), padding=(1, 4), stride=(1, 1))
+        self.conv1 = nn.Conv2d(1, 16, (3, 9), padding=(1, 0), stride=(1, 1))
+        self.maxpool_narrow = nn.MaxPool2d(kernel_size=(2, 1), stride=(2, 2))
         self.maxpool_square = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
         self.conv2 = nn.Conv2d(16, 32, (3, 3), padding=(1, 1), stride=(1, 1))
         self.batchnorm64 = nn.BatchNorm2d(64)
@@ -48,11 +49,14 @@ class Encoder(nn.Module):
         #     x_batch.append(tensor)
         #
         # x_batch = Variable(torch.cat(x_batch, 0))
+
+        # x_batch = Variable(input)
+        x_batch = input
         if self.use_cuda is not None:
-            x_batch = input.cuda(self.use_cuda)
+            x_batch = x_batch.cuda(self.use_cuda)
 
         features = F.relu(self.conv1(x_batch))
-        features = self.maxpool_square(features)
+        features = self.maxpool_narrow(features)
         features = self.maxpool_square(F.relu(self.conv2(features)))
         features = self.maxpool_square(F.relu(self.batchnorm64(self.conv3(features))))
         features = self.maxpool_wide(F.relu(self.batchnorm128(self.conv4(features))))
