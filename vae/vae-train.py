@@ -83,6 +83,7 @@ def train(model, phase, dataloader, batch_size, loss_function, optim, num_epochs
                     x = x.cuda(cuda_dev)
                     z = z.cuda(cuda_dev)
                 loss, bce, kld = loss_fn(z, x, mu, logvar)
+                print('bce: {}\nkld: {}\ncombined: {}\n'.format(bce.item(), kld.item(), loss.item()))
                 running_loss += loss.data[0]
 
                 # update model

@@ -61,7 +61,7 @@ class VariationalAutoencoder(nn.Module):
         self.fc2 = nn.Linear(rnn_size, h_dim)
         self.fc_h = nn.Linear(h_dim, h_dim)
         self.fc_c = nn.Linear(h_dim, h_dim)
-        self.fc_out = nn.Linear(h_dim, 16*256)
+        self.fc_out = nn.Linear(h_dim, 129)
         # self.encoder = nn.Sequential(
         #     nn.Conv2d(1, 16, kernel_size=8, stride=2),
         #     nn.ReLU(),
@@ -146,38 +146,49 @@ class VariationalAutoencoder(nn.Module):
         channels_target, height_target, width_target = tsize
         h, c = self.fc_h(z), self.fc_c(z)
         h, c = h.unsqueeze(0), c.unsqueeze(0)
+
         out = Variable(torch.zeros(1, z.shape[0], self.rnn_size))
-        seq_out = Variable(torch.zeros(z.shape[0], channels_target, height_target, width_target))
+        # seq_out = Variable(torch.zeros(z.shape[0], channels_target, height_target, width_target))
         if self.use_cuda is not None:
-            seq_out = seq_out.cuda(self.use_cuda)
+            # seq_out = seq_out.cuda(self.use_cuda)
             out = out.cuda(self.use_cuda)
 
-        for i in range(width_target):
+        outputs = Variable(torch.zeros(z.shape[0], self.max_w, 128))
+
+        for i in range(self.max_w):
             out, (h, c) = self.dec_rnn(out, (h, c))
-            col = self.fc_out(out)
+            out = out.view(1, self.batch_size, 1, -1)
+            col = self.fc_out(out.view(self.batch_size, -1))
+            # col = col.unsqueeze(2)
+            outputs[:, :, i] = col
+
             # col = col > col.mean()
             # col = col.type(torch.FloatTensor)
-            col = col.squeeze(0).unsqueeze(1)
-            col = col.view(col.shape[0], 256, 16, -1)
+
+            # col = col.squeeze(0).unsqueeze(1)
+            # col = col.view(col.shape[0], 256, 16, -1)
 
 
-            if self.use_cuda is not None:
-                out = out.cuda(self.use_cuda)
-                col = col.cuda(self.use_cuda)
+            # if self.use_cuda is not None:
+            #     out = out.cuda(self.use_cuda)
+            #     col = col.cuda(self.use_cuda)
+
             # dec_in = out
             # out = out.squeeze(0).unsqueeze(1)
-            seq_out[:, :, :, i] = col.squeeze(-1)
-        if self.use_cuda is not None:
-            seq_out = seq_out.cuda(self.use_cuda)
+
+        #     seq_out[:, :, :, i] = col.squeeze(-1)
+        # if self.use_cuda is not None:
+        #     seq_out = seq_out.cuda(self.use_cuda)
 
         # return self.decoder(seq_out)
-        b_size, c_size, height, width = seq_out.shape[0], seq_out.shape[1], seq_out.shape[2]*2, seq_out.shape[3]*2
-        out = F.relu(self.deconv1(seq_out, output_size=self.conv_sizes[0]))
-        out = F.relu(self.deconv2(out, output_size=self.conv_sizes[1]))
-        out = F.relu(self.deconv3(out, output_size=self.conv_sizes[2]))
-        out = F.relu(self.deconv4(out, output_size=self.conv_sizes[3]))
-        out = F.relu(self.deconv5(out, output_size=self.conv_sizes[4]))
-        return out
+        # b_size, c_size, height, width = seq_out.shape[0], seq_out.shape[1], seq_out.shape[2]*2, seq_out.shape[3]*2
+        # out = F.relu(self.deconv1(seq_out, output_size=self.conv_sizes[0]))
+        # out = F.relu(self.deconv2(out, output_size=self.conv_sizes[1]))
+        # out = F.relu(self.deconv3(out, output_size=self.conv_sizes[2]))
+        # out = F.relu(self.deconv4(out, output_size=self.conv_sizes[3]))
+        # out = F.relu(self.deconv5(out, output_size=self.conv_sizes[4]))
+
+        return outputs
 
 
     def forward(self, x):
