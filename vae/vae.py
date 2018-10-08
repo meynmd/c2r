@@ -62,6 +62,9 @@ class VariationalAutoencoder(nn.Module):
         self.fc_h = nn.Linear(h_dim, h_dim)
         self.fc_c = nn.Linear(h_dim, h_dim)
         self.fc_out = nn.Linear(h_dim, 16*256)
+
+        self.fc_init = nn.Linear(h_dim, 4096*64)
+
         # self.encoder = nn.Sequential(
         #     nn.Conv2d(1, 16, kernel_size=8, stride=2),
         #     nn.ReLU(),
@@ -98,6 +101,7 @@ class VariationalAutoencoder(nn.Module):
         self.deconv4 =    nn.ConvTranspose2d(32, 16, kernel_size=(3, 3), stride=2, padding=(1, 1))
         self.deconv5 =    nn.ConvTranspose2d(16, 1, kernel_size=(3, 9), stride=2, padding=(1, 4))
 
+        self.sig = nn.Sigmoid()
 
         if use_cuda is not None:
             self.use_cuda = use_cuda
@@ -143,46 +147,59 @@ class VariationalAutoencoder(nn.Module):
         return z, mu, logvar, features
 
     def decode(self, z, tsize):
-        channels_target, height_target, width_target = tsize
-        h, c = self.fc_h(z), self.fc_c(z)
-        h, c = h.unsqueeze(0), c.unsqueeze(0)
-        out = Variable(torch.zeros(1, z.shape[0], self.rnn_size))
-        seq_out = Variable(torch.zeros(z.shape[0], channels_target, height_target, width_target))
-        if self.use_cuda is not None:
-            seq_out = seq_out.cuda(self.use_cuda)
-            out = out.cuda(self.use_cuda)
+        # channels_target, height_target, width_target = tsize
+        # h, c = self.fc_h(z), self.fc_c(z)
+        # h, c = h.unsqueeze(0), c.unsqueeze(0)
+        # out = Variable(torch.zeros(1, z.shape[0], self.rnn_size))
+        # seq_out = Variable(torch.zeros(z.shape[0], channels_target, height_target, width_target))
+        # if self.use_cuda is not None:
+        #     seq_out = seq_out.cuda(self.use_cuda)
+        #     out = out.cuda(self.use_cuda)
 
-        for i in range(width_target):
-            out, (h, c) = self.dec_rnn(out, (h, c))
-            col = self.fc_out(out)
-            # col = col > col.mean()
-            # col = col.type(torch.FloatTensor)
-            col = col.squeeze(0).unsqueeze(1)
-            col = col.view(col.shape[0], 256, 16, -1)
+        # for i in range(width_target):
+        #     out, (h, c) = self.dec_rnn(out, (h, c))
+        #     col = self.fc_out(out)
+        #     # col = col > col.mean()
+        #     # col = col.type(torch.FloatTensor)
+        #     col = col.squeeze(0).unsqueeze(1)
+        #     col = col.view(col.shape[0], 256, 16, -1)
+        #
+        #     if self.use_cuda is not None:
+        #         out = out.cuda(self.use_cuda)
+        #         col = col.cuda(self.use_cuda)
+        #     # dec_in = out
+        #     # out = out.squeeze(0).unsqueeze(1)
+        #     seq_out[:, :, :, i] = col.squeeze(-1)
+        # if self.use_cuda is not None:
+        #     seq_out = seq_out.cuda(self.use_cuda)
 
-
-            if self.use_cuda is not None:
-                out = out.cuda(self.use_cuda)
-                col = col.cuda(self.use_cuda)
-            # dec_in = out
-            # out = out.squeeze(0).unsqueeze(1)
-            seq_out[:, :, :, i] = col.squeeze(-1)
-        if self.use_cuda is not None:
-            seq_out = seq_out.cuda(self.use_cuda)
+        fmap = self.fc_init(z)
+        fmap = fmap.view(self.batch_size, 256, 16, 64)
 
         # return self.decoder(seq_out)
-        b_size, c_size, height, width = seq_out.shape[0], seq_out.shape[1], seq_out.shape[2]*2, seq_out.shape[3]*2
-        out = F.relu(self.deconv1(seq_out, output_size=self.conv_sizes[0]))
+        # b_size, c_size, height, width = seq_out.shape[0], seq_out.shape[1], seq_out.shape[2]*2, seq_out.shape[3]*2
+        out = F.relu(self.deconv1(fmap, output_size=self.conv_sizes[0]))
         out = F.relu(self.deconv2(out, output_size=self.conv_sizes[1]))
         out = F.relu(self.deconv3(out, output_size=self.conv_sizes[2]))
         out = F.relu(self.deconv4(out, output_size=self.conv_sizes[3]))
-        out = F.relu(self.deconv5(out, output_size=self.conv_sizes[4]))
+        out = self.deconv5(out, output_size=self.conv_sizes[4])
+        means = out.view(out.shape[0], -1).mean(1)
+        for i in range(means.shape[0]):
+            out[i, :, :, :] -= means[i].item()
+        stds = out.view(out.shape[0], -1).std(1)
+        for i in range(stds.shape[0]):
+            out[i, :, :, :] /= stds[i].item()
+
+        out = self.sig(out)
+
+        # out = out.round()
+        # out = out.type(torch.long)
         return out
 
 
     def forward(self, x):
         z, mu, logvar, features = self.encode(x)
         z = self.decode(z, (features.shape[1], features.shape[2], features.shape[3]))
-        z = (z > 0.).type(torch.FloatTensor)
+        # z = (z > 0.).type(torch.FloatTensor)
         return z, mu, logvar
 

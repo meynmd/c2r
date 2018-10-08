@@ -12,49 +12,11 @@ from torch.utils.data.dataloader import DataLoader
 from torch.autograd import Variable
 from torch import cuda
 
-import encoder
-import pr_dataset
+import conv_classifier
+from fragments_dataset import FragmentsDataset
 
 
-def random_crop(tensor, w_new, h_new=None):
-    h, w = tensor.shape[2], tensor.shape[3]
-    top, left = 0, 0
-    if w_new < w:
-        left = np.random.randint(0, w - w_new)
-    if h_new is None:
-        return tensor[:, :, :, left: left + w_new]
-    if h_new < h:
-        top = np.random.randint(0, h - h_new)
-    return tensor[top: top + h_new, left: left + w_new]
-
-
-def make_batch(tensors, max_w, cuda_dev=None):
-    batch_size = len(tensors)
-    max_w = min(max_w, min(t.shape[1] for t in tensors))
-
-    if max_w % 16 != 0:
-        max_w = 16*(max_w // 16 + 1)
-
-    x_batch = []
-    for tensor in tensors:
-        tensor = (tensor > 0.).type(torch.float)
-        tensor = tensor.view(1, 1, tensor.shape[0], tensor.shape[1])
-        if tensor.shape[3] > max_w:
-            tensor = random_crop(tensor, max_w)
-        elif tensor.shape[3] < max_w:
-            tensor = torch.nn.functional.pad(tensor, (0, max_w - tensor.shape[3], 0, 0))
-        assert(tensor.shape[3] == max_w)
-        x_batch.append(tensor)
-
-    if cuda_dev is None:
-        x_batch = Variable(torch.cat(x_batch, 0))
-    else:
-        x_batch = Variable(torch.cat(x_batch, 0)).cuda(cuda_dev)
-
-    return x_batch
-
-
-def train(model, phase, dataloader, batch_size, loss_fn, optim, num_epochs=50, model_dir="model", cuda_dev=None, lr_decay=0.):
+def train(model, phase, dataloader, batch_size, loss_fn, optim, num_epochs=50, model_dir="model", cuda_dev=None,):
     best_loss = float("inf")
     phases = [phase]
     if phase == "val":
@@ -63,8 +25,10 @@ def train(model, phase, dataloader, batch_size, loss_fn, optim, num_epochs=50, m
         phases.append("val")
 
     for epoch in range(num_epochs):
-        optim.param_groups[0]['lr'] *= (1. - lr_decay)
-        print(80*"*" + "\nEpoch {}\tlr {}\n".format(epoch + 1, optim.param_groups[0]['lr']))
+
+        optim.param_groups[1]['lr'] += (optim.param_groups[0]['lr'] - optim.param_groups[1]['lr']) / 100.
+
+        print('\n' + 80*"*" + "\nEpoch {}\tlr {}\tpretrained lr {}\n".format(epoch + 1, optim.param_groups[0]['lr'], optim.param_groups[1]['lr']))
 
         # phases ["train", "val"], or ["val"]
         for phase in phases:
@@ -77,12 +41,14 @@ def train(model, phase, dataloader, batch_size, loss_fn, optim, num_epochs=50, m
             # dataloader should provide whatever batch size was specified when instantiated
             for i, data in enumerate(dataloader[phase]):
                 x, y = data
-                batch_size = len(x)
+                batch_size = x.shape[0]
+                x = x.unsqueeze(1)
                 y = Variable(torch.LongTensor(y))
                 if cuda_dev is not None:
+                    x = x.cuda(cuda_dev)
                     y = y.cuda(cuda_dev)
 
-                x = make_batch(x, model.max_w, cuda_dev)
+                # x = make_batch(x, model.max_w, cuda_dev)
 
                 optim.zero_grad()
 
@@ -110,24 +76,18 @@ def train(model, phase, dataloader, batch_size, loss_fn, optim, num_epochs=50, m
             if phase == "val":
                 if avg_loss < best_loss or (epoch % 99 == 0 and epoch >= 99):
                     if epoch > 99:
-                        save_name = "model-rnn{}-loss{:.3}-epoch{}".format(model.rnn_size, avg_loss, epoch + 1)
+                        save_name = "model-loss{:.3}-epoch{}".format(avg_loss, epoch + 1)
                         # save_name += "-".join(time.asctime().split(" ")[:-1]).replace(":", ".")
                     else:
                         save_name = "model-best"
+                    save_name += ".pt"
                     save_path = "{}/{}".format(model_dir, save_name)
                     torch.save(model.state_dict(), save_path)
                     print("Model saved to {}".format(save_path))
                 sys.stdout.flush()
                 best_loss = min(best_loss, avg_loss)
+        print(80*"*")
     print()
-
-
-def load_data(path):
-    data = []
-    for d in os.listdir(path):
-        filenames = glob.glob(path + "/" + d + "/*.npy")
-        data += [(np.load(f), d) for f in filenames]
-    return data
 
 
 def main(opts):
@@ -142,61 +102,72 @@ def main(opts):
     sys.stdout.flush()
 
     # initialize data loader
-    datasets = { p : pr_dataset.PianoRollDataset(os.getcwd() + "/" + opts.data_dir, "labels.csv", p)
+    labels_path = os.path.join(os.getcwd(), opts.data_dir, 'labels.csv')
+    # data_root, label_dict_file, phase="train"
+    datasets = { p :  FragmentsDataset(os.path.join(os.getcwd(), opts.data_dir), labels_path, p)
                  for p in ("train", "val") }
     dataloaders = {
         p : DataLoader(
             datasets[p],
             batch_size=opts.batch_size if p == "train" else 8,
             shuffle=True,
-            num_workers=8,
-            collate_fn=lambda b : list(list(l) for l in zip(*b))
+            num_workers=0 #, collate_fn=lambda b : list(list(l) for l in zip(*b))
         ) for p in ("train", "val")
     }
 
     # set up the model
-    enc = encoder.Encoder(
+    net = conv_classifier.ConvClassifier(
         datasets["train"].get_y_count(),
         opts.batch_size,
-        rnn_size=opts.rnn_size,
-        num_rnn_layers=opts.rnn_layers,
+        opts.window_size,
         use_cuda=cuda_dev,
-        max_w=opts.max_w
     )
     if opts.load:
-        enc.load_state_dict(torch.load(opts.load))
+        net.load_state_dict(torch.load(opts.load), strict=False)
     if cuda_dev is not None:
-        enc = enc.cuda(cuda_dev)
+        net = net.cuda(cuda_dev)
 
     # set up the loss function and optimizer
     class_probs = torch.FloatTensor(max(datasets["train"].x_counts.keys()) + 1)
     for idx, count in datasets["train"].x_counts.items():
         class_probs[idx] = count
     class_probs /= sum(class_probs)
-    lf = nn.CrossEntropyLoss(weight=torch.FloatTensor(
-        torch.FloatTensor([1. for x in class_probs]) - class_probs).cuda(cuda_dev)
-    )
-    optim = torch.optim.SGD(enc.parameters(), lr=10**(-opts.init_lr), momentum=0.95)
+    class_weights = torch.FloatTensor(torch.FloatTensor([1. for x in class_probs]) - class_probs)
+    lf = nn.CrossEntropyLoss(weight=class_weights.cuda(cuda_dev))
+
+    learn_params, freeze_params = net.parameters(), []
+    if opts.freeze:
+        if not opts.load:
+            print("error: option --freeze only makes sense with option --load")
+            exit(1)
+        else:
+            freeze_modules = [net.conv1, net.conv2, net.conv3, net.conv4, net.batchnorm128, net.batchnorm64]
+            for m in freeze_modules:
+                freeze_params += list(m.parameters())
+            learn_params = list(set(learn_params) - set(freeze_params))
+
+    base_lr = 10**(-opts.init_lr)
+    freeze_lr = opts.freeze_factor * base_lr
+
+    optim = torch.optim.SGD([{'params' : learn_params}, {'params' : freeze_params, 'lr' : freeze_lr}], lr=base_lr, momentum=0.95)
 
     # (model, phase, dataloader, batch_size, loss_fn, optim, num_epochs=50)
-    train(enc, "train", dataloaders, opts.batch_size, lf, optim, opts.max_epochs, cuda_dev=cuda_dev, model_dir=opts.model_dir, lr_decay=0.0001)
+    train(net, "train", dataloaders, opts.batch_size, lf, optim, opts.max_epochs, cuda_dev=cuda_dev, model_dir=opts.model_dir)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rnn_size", type=int, default=128)
-    parser.add_argument("--rnn_layers", type=int, default=1)
-    parser.add_argument("--data_dir", default="preprocessed")
-    parser.add_argument("--max_epochs", type=int, default=12500)
-    parser.add_argument("--max_w", type=int, default=5000)
-    parser.add_argument("--test", action="store_true")
-    parser.add_argument("--batch_size", type=int, default=8)
-    parser.add_argument("-m", "--model_dir", default="crnn-512-model")
-    parser.add_argument("--num_batch_valid", type=int, default=1)
+    parser.add_argument("--data_dir", default="pprocessed-prs")
+    parser.add_argument("--max_epochs", type=int, default=1000)
+    parser.add_argument("--window_size", type=int, default=1024)
+    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("-m", "--model_dir", default="model_piece_classifier")
     parser.add_argument("-s", "--seed", type=int, default=0)
     parser.add_argument("-c", "--use_cuda", type=int, default=None)
     parser.add_argument("-l", "--init_lr", type=int, default=5)
     parser.add_argument("--load", default=None)
+    parser.add_argument("--freeze", action="store_true")
+    parser.add_argument("--freeze_factor", type=float, default=0.01)
 
     args = parser.parse_args()
     main(args)

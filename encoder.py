@@ -13,8 +13,8 @@ class Encoder(nn.Module):
         self.rnn_layers = num_rnn_layers
         self.max_w = max_w
         self.batch_size = batch_size
-        self.conv1 = nn.Conv2d(1, 16, (3, 9), padding=(1, 0), stride=(1, 1))
-        self.maxpool_narrow = nn.MaxPool2d(kernel_size=(2, 1), stride=(2, 2))
+        self.conv1 = nn.Conv2d(1, 16, (3, 5), padding=(1, 2), stride=(1, 1))
+        self.maxpool_narrow = nn.MaxPool2d(kernel_size=(2, 1), stride=(2, 1))
         self.maxpool_square = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
         self.conv2 = nn.Conv2d(16, 32, (3, 3), padding=(1, 1), stride=(1, 1))
         self.batchnorm64 = nn.BatchNorm2d(64)
@@ -39,7 +39,7 @@ class Encoder(nn.Module):
             self.use_cuda = None
 
     def forward(self, input):
-        batch_size = len(input)
+        batch_size = input.shape[0]
         # max_w = min(self.max_w, min(t.shape[1] for t in input))
         # x_batch = []
         # for tensor in input:
@@ -52,17 +52,21 @@ class Encoder(nn.Module):
 
         # x_batch = Variable(input)
         x_batch = input
-        if self.use_cuda is not None:
-            x_batch = x_batch.cuda(self.use_cuda)
+        # if self.use_cuda is not None:
+        #     x_batch = x_batch.cuda(self.use_cuda)
 
         features = F.relu(self.conv1(x_batch))
-        features = self.maxpool_narrow(features)
+        features = self.maxpool_square(features)
         features = self.maxpool_square(F.relu(self.conv2(features)))
         features = self.maxpool_square(F.relu(self.batchnorm64(self.conv3(features))))
         features = self.maxpool_wide(F.relu(self.batchnorm128(self.conv4(features))))
         features = F.relu(self.batchnorm256(self.conv5(features)))
 
-        rnn_in = features.view(batch_size, 256*features.data.shape[2], -1).transpose(0, 2).transpose(1, 2)
+        # print('features shape: {}'.format(features.data.shape))
+
+        rnn_in = features.view(features.data.shape[0],
+                               features.data.shape[1]*features.data.shape[2],
+                               features.data.shape[3]).transpose(0, 2).transpose(1, 2)
         output, (hidden, _) = self.rnn(rnn_in)
 
         hidden = hidden.view(batch_size, self.rnn_size)

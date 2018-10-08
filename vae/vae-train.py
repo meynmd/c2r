@@ -27,19 +27,26 @@ def random_crop(tensor, w_new, h_new=None):
     return tensor[top: top + h_new, left: left + w_new]
 
 
-def make_batch(tensors, max_w):
-    batch_size = len(tensors)
-    max_w = min(max_w, min(t.shape[1] for t in tensors))
+def make_batch(tensors, max_w, batch_size):
+    # batch_size = len(tensors)
+    # max_w = min(max_w, min(t.shape[1] for t in tensors))
 
-    x_batch = []
-    for tensor in tensors:
+    assert(len(tensors) > 0)
+    col_height = tensors[0].shape[0]
+    dims = (col_height, max_w)
+    x_batch = torch.zeros(batch_size, 1, *dims)
+    for i, tensor in enumerate(tensors):
         tensor = (tensor > 0.).type(torch.FloatTensor)
         tensor = tensor.view(1, 1, tensor.shape[0], tensor.shape[1])
         if tensor.shape[3] > max_w:
             tensor = random_crop(tensor, max_w)
-        x_batch.append(tensor)
+        elif tensor.shape[3] < max_w:
+            padded = torch.zeros(*tensor.shape[:-1], max_w)
+            padded[:, :, :, :tensor.shape[3]] = tensor[:, :, :, :]
+            tensor = padded
+        x_batch[i, :, :, :] = tensor
 
-    return Variable(torch.cat(x_batch, 0))
+    return Variable(x_batch)
 
 
 def train(model, phase, dataloader, batch_size, loss_function, optim, num_epochs=50, num_batches_val=1,
@@ -58,20 +65,21 @@ def train(model, phase, dataloader, batch_size, loss_function, optim, num_epochs
 
         # phases ["train", "val"], or ["val"]
         for phase in phases:
-            running_loss, err = 0., 0
+            running_loss, err = 0., 0.
             if phase == "train":
                 model.train()
             else:
                 model.eval()
 
             # dataloader should provide whatever batch size was specified when instantiated
+            acc_z, z_min, z_max = 0., float('inf'), -float('inf')
             for i, data in enumerate(dataloader[phase]):
                 x, y = data
-                y = Variable(torch.LongTensor(y))
-                if cuda_dev is not None:
-                    y = y.cuda(cuda_dev)
+                # y = Variable(torch.LongTensor(y))
+                # if cuda_dev is not None:
+                #     y = y.cuda(cuda_dev)
 
-                x = make_batch(x, model.max_w)
+                x = make_batch(x, model.max_w, batch_size)
                 if cuda_dev:
                     x = x.cuda(cuda_dev)
 
@@ -82,14 +90,22 @@ def train(model, phase, dataloader, batch_size, loss_function, optim, num_epochs
                 if cuda_dev is not None:
                     x = x.cuda(cuda_dev)
                     z = z.cuda(cuda_dev)
+
+                acc_z += z.data.mean().item()
+                z_min, z_max = min(z.data.min().item(), z_min), max(z.data.max().item(), z_max)
+
                 loss, bce, kld = loss_fn(z, x, mu, logvar)
-                running_loss += loss.data[0]
+                print('bce: {}\tkld: {}'.format(bce, kld))
+                running_loss += loss.data.item()
 
                 # update model
                 if phase == "train":
                     loss.backward()
                     optim.step()
 
+            avg_z = acc_z / float(len(dataloader[phase]))
+
+            print('avg z: {}\tmin z: {}\tmax z: {}'.format(avg_z, z_min, z_max))
 
             # print progress
             avg_loss = running_loss / float(i + 1)
@@ -123,18 +139,19 @@ def load_data(path):
 
 
 def loss_fn(z, x, mu, logvar):
-    bce = torch.nn.functional.binary_cross_entropy(z, x, size_average=False)
+    bce = torch.nn.functional.binary_cross_entropy(z, x, size_average=True)
     kld = -0.5*torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+    kld = 0.
     return bce + kld, bce, kld
 
 
 def main(opts):
-    # training script
     if opts.use_cuda is not None:
         print("using CUDA device {}".format(opts.use_cuda), file=sys.stderr)
         cuda_dev = int(opts.use_cuda)
     else:
         cuda_dev = None
+
     torch.manual_seed(opts.seed)
     print("random seed {}".format(opts.seed))
     sys.stdout.flush()
@@ -142,6 +159,7 @@ def main(opts):
     # initialize data loader
     datasets = { p : pr_dataset.PianoRollDataset(os.getcwd() + "/" + opts.data_dir, "labels.csv", p)
                  for p in ("train", "val") }
+
     dataloaders = {
         p : DataLoader(
             datasets[p],
@@ -158,25 +176,19 @@ def main(opts):
         rnn_size=opts.rnn_size,
         num_rnn_layers=opts.rnn_layers,
         use_cuda=cuda_dev,
-        max_w=opts.max_w
+        max_w=opts.max_w,
+        h_dim=opts.latent_dim
     )
     if opts.load:
         enc.load_state_dict(torch.load(opts.load))
     if cuda_dev is not None:
         enc = enc.cuda(cuda_dev)
 
-    # set up the loss function and optimizer
-    # class_probs = torch.FloatTensor(max(datasets["train"].x_counts.keys()) + 1)
-    # for idx, count in datasets["train"].x_counts.items():
-    #     class_probs[idx] = count
-    # class_probs /= sum(class_probs)
-    # lf = nn.CrossEntropyLoss(weight=torch.FloatTensor(
-    #     torch.FloatTensor([1. for x in class_probs]) - class_probs).cuda(cuda_dev)
-    # )
     optim = torch.optim.SGD(enc.parameters(), lr=10**(-opts.init_lr), momentum=0.9)
 
-    # train(model, phase, dataloader, batch_size, loss_fn, optim, num_epochs=50)
-    train(enc, "train", dataloaders, 1, loss_fn, optim, opts.max_epochs, cuda_dev=cuda_dev, model_dir=opts.model_dir)
+    os.makedirs(os.path.join(os.getcwd(), opts.model_dir), exist_ok=True)
+
+    train(enc, "train", dataloaders, opts.batch_size, loss_fn, optim, opts.max_epochs, cuda_dev=cuda_dev, model_dir=opts.model_dir)
 
 
 if __name__ == "__main__":
@@ -195,6 +207,7 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--use_cuda", type=int, default=None)
     parser.add_argument("-l", "--init_lr", type=int, default=5)
     parser.add_argument("--load", default=None)
+    parser.add_argument("--latent_dim", type=int, default=512)
 
     args = parser.parse_args()
     main(args)
