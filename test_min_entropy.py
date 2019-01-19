@@ -11,7 +11,7 @@ from torch.utils.data.dataloader import DataLoader
 from torch.autograd import Variable
 from torch import cuda
 
-import encoder
+import crnn as encoder #encoder
 import pr_dataset
 
 def random_crop(tensor, w_new, h_new=None):
