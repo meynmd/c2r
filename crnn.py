@@ -27,7 +27,7 @@ class Encoder(nn.Module):
         self.conv6 = nn.Conv2d(256, 512, (3, 3), padding=(1, 1), stride=(1, 1))
         self.batchnorm512 = nn.BatchNorm2d(512)
 
-        self.rnn = nn.LSTM(int(512*128/2**2), rnn_size, num_layers=self.rnn_layers, bidirectional=False, dropout=0.5)
+        self.rnn = nn.LSTM(int(512*128/2**2), rnn_size, num_layers=self.rnn_layers, bidirectional=False) #, dropout=0.5)
 
         self.batchnorm_fc = nn.BatchNorm1d(256)
         self.fc1 = nn.Linear(rnn_size, 256)
