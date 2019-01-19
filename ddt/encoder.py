@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 import torch
 import torch.nn as nn
@@ -62,10 +63,37 @@ class Encoder(nn.Module):
                                features.data.shape[3]).transpose(0, 2).transpose(1, 2)
         output, (hidden, _) = self.rnn(rnn_in)
 
-        hidden = hidden.view(batch_size, self.rnn_size)
-        out = F.relu(self.fc1(hidden))
-        # out = F.relu(self.fc2(out))
-        return self.fc3(out)
+        return output
+
+
+    def locate_transitions(self, x, avg_window=10, points_max=10):
+        z = self.forward(x).squeeze(1)
+        if z.shape[0] <= avg_window:
+            print('the output sequence is way too short!', file=sys.stderr)
+            return None
+
+        dot_prods = torch.zeros(z.shape[0])
+        dot_prods[:avg_window] = 1.
+
+        running_avg =torch.mean(z[:avg_window, :], 0)
+        # running_avg = running_avg / torch.norm(running_avg)
+
+        # last_vec = z[0, :] / torch.norm(z[0, :])
+
+        for i in range(avg_window, z.shape[0]):
+            cur_vec = z[i, :] / torch.norm(z[i, :])
+
+            # mean_vec = torch.mean(z[max(0, i-avg_window) : i], 0)
+            # mean_vec /= torch.norm(mean_vec)
+
+            dot_prods[i] = torch.dot(running_avg/torch.norm(running_avg), cur_vec)
+            running_avg = running_avg*(avg_window - 1.)/avg_window + z[i, :]*1./avg_window
+
+            # dot_prods[i] = torch.dot(last_vec, cur_vec)
+            # last_vec = cur_vec
+
+        vals, idxs = torch.topk(dot_prods, points_max, 0, False)
+        return z, dot_prods, vals, idxs
 
 
     def random_crop(self, tensor, w_new, h_new=None):

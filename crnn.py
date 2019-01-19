@@ -24,15 +24,15 @@ class Encoder(nn.Module):
         self.maxpool_wide = nn.MaxPool2d(kernel_size=(1, 2), stride=(1, 2))
         self.conv5 = nn.Conv2d(128, 256, (3, 3), padding=(1, 1), stride=(1, 1))
         self.batchnorm256 = nn.BatchNorm2d(256)
-        self.conv6 = nn.Conv2d(256, 256, (3, 3), padding=(1, 1), stride=(1, 1))
-        self.batchnorm256_2 = nn.BatchNorm2d(256)
+        self.conv6 = nn.Conv2d(256, 512, (3, 3), padding=(1, 1), stride=(1, 1))
+        self.batchnorm512 = nn.BatchNorm2d(512)
 
-        self.rnn = nn.LSTM(8192, rnn_size, num_layers=self.rnn_layers, bidirectional=False)
+        self.rnn = nn.LSTM(int(512*128/2**2), rnn_size, num_layers=self.rnn_layers, bidirectional=False) #, dropout=0.5)
 
-        # self.batchnorm1d = nn.BatchNorm1d(1024)
-        self.fc1 = nn.Linear(rnn_size, 128)
+        self.batchnorm_fc = nn.BatchNorm1d(256)
+        self.fc1 = nn.Linear(rnn_size, 256)
         # self.fc2 = nn.Linear(256, 128)
-        self.fc3 = nn.Linear(128, num_categories)
+        self.fc3 = nn.Linear(256, num_categories)
 
         if use_cuda is not None:
             self.use_cuda = use_cuda
@@ -50,12 +50,8 @@ class Encoder(nn.Module):
         features = self.maxpool_wide(F.relu(self.conv2(features)))
         features = self.maxpool_wide(F.relu(self.batchnorm64(self.conv3(features))))
         features = self.maxpool_square(F.relu(self.batchnorm128(self.conv4(features))))
-        # features = self.batchnorm256(self.conv5(features))
-
         features = self.maxpool_square(F.relu(self.batchnorm256(self.conv5(features))))
-        features = self.batchnorm256_2(self.conv6(features))
-
-        # print('features shape: {}'.format(features.data.shape))
+        features = self.batchnorm512(self.conv6(features))
 
         rnn_in = features.view(features.data.shape[0],
                                features.data.shape[1]*features.data.shape[2],
@@ -63,8 +59,9 @@ class Encoder(nn.Module):
         output, (hidden, _) = self.rnn(rnn_in)
 
         hidden = hidden.view(batch_size, self.rnn_size)
-        out = F.relu(self.fc1(hidden))
+        out = F.relu(self.batchnorm_fc(self.fc1(hidden)))
         # out = F.relu(self.fc2(out))
+
         return self.fc3(out)
 
 

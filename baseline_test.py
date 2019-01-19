@@ -11,20 +11,8 @@ from torch.utils.data.dataloader import DataLoader
 from torch.autograd import Variable
 from torch import cuda
 
-import encoder
+import baseline as encoder
 import pr_dataset
-
-
-def random_crop(tensor, w_new, h_new=None):
-    h, w = tensor.shape[0], tensor.shape[1]
-    top, left = 0, 0
-    if w_new < w:
-        left = np.random.randint(0, w - w_new)
-    if h_new is None:
-        return tensor[:, left : left + w_new]
-    if h_new < h:
-        top = np.random.randint(0, h - h_new)
-    return tensor[top : top + h_new, left : left + w_new]
 
 
 def test(model, data, num_per_class, cuda_dev):
@@ -37,16 +25,13 @@ def test(model, data, num_per_class, cuda_dev):
     for i, label in labels:
         # get (x, y)'s from dataset object, select num_per_class of them
         class_datapoints = list(data.get_from_class(label))
-        # random.shuffle(class_datapoints)
+        random.shuffle(class_datapoints)
         num_d = min(num_per_class, len(class_datapoints))
         probs = np.zeros(num_classes) # [0. for j in range(len(data.get_all_labels()))]
         preds = np.zeros(num_classes)
-        for (x, y), _ in class_datapoints[:num_d]:
+        for x, y in class_datapoints[:num_d]:
             model.eval()
-            if x.shape[1] > model.max_w:
-                x = random_crop(x, model.max_w)
-            x = x.unsqueeze(0).unsqueeze(0)
-            z = model(x)
+            z = model([x])
             # record softmax "probabilities" for each label
             p = torch.nn.functional.softmax(z).cpu().data.numpy()
             probs = probs + p
@@ -109,7 +94,7 @@ def main(opts):
         cuda_dev = None
 
     # load the data
-    dataset = pr_dataset.PianoRollDataset(os.getcwd() + "/" + opts.data_dir, "labels.csv", "test")
+    dataset = pr_dataset.PianoRollDataset(os.getcwd() + "/" + opts.data_dir, "labels.csv", "val")
 
     # load the model
     enc = encoder.Encoder(
@@ -122,12 +107,11 @@ def main(opts):
     )
 
     if opts.load:
-        saved_state = torch.load(opts.load, map_location='cpu')
-        enc.load_state_dict(saved_state)
+        enc.load_state_dict(torch.load(opts.load))
     if cuda_dev is not None:
         enc = enc.cuda(cuda_dev)
 
-    test(enc, dataset, 1000, opts.use_cuda)
+    test(enc, dataset, 100, opts.use_cuda)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

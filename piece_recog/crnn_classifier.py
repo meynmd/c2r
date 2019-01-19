@@ -29,10 +29,9 @@ class Encoder(nn.Module):
 
         self.rnn = nn.LSTM(8192, rnn_size, num_layers=self.rnn_layers, bidirectional=False)
 
-        # self.batchnorm1d = nn.BatchNorm1d(1024)
-        self.fc1 = nn.Linear(rnn_size, 128)
-        # self.fc2 = nn.Linear(256, 128)
-        self.fc3 = nn.Linear(128, num_categories)
+        self.batchnorm1d = nn.BatchNorm1d(128)
+        self.fc1_n = nn.Linear(rnn_size, 128)
+        self.fc3_n = nn.Linear(128, num_categories)
 
         if use_cuda is not None:
             self.use_cuda = use_cuda
@@ -63,9 +62,8 @@ class Encoder(nn.Module):
         output, (hidden, _) = self.rnn(rnn_in)
 
         hidden = hidden.view(batch_size, self.rnn_size)
-        out = F.relu(self.fc1(hidden))
-        # out = F.relu(self.fc2(out))
-        return self.fc3(out)
+        out = F.relu(self.batchnorm1d(self.fc1_n(hidden)))
+        return self.fc3_n(out)
 
 
     def random_crop(self, tensor, w_new, h_new=None):

@@ -24,15 +24,14 @@ class Encoder(nn.Module):
         self.maxpool_wide = nn.MaxPool2d(kernel_size=(1, 2), stride=(1, 2))
         self.conv5 = nn.Conv2d(128, 256, (3, 3), padding=(1, 1), stride=(1, 1))
         self.batchnorm256 = nn.BatchNorm2d(256)
-        self.conv6 = nn.Conv2d(256, 256, (3, 3), padding=(1, 1), stride=(1, 1))
-        self.batchnorm256_2 = nn.BatchNorm2d(256)
+        self.conv6 = nn.Conv2d(256, 512, (3, 3), padding=(1, 1), stride=(1, 1))
+        self.batchnorm512 = nn.BatchNorm2d(512)
 
-        self.rnn = nn.LSTM(8192, rnn_size, num_layers=self.rnn_layers, bidirectional=False)
+        self.rnn = nn.LSTM(int(512*128/2**2), rnn_size, num_layers=self.rnn_layers, bidirectional=False, dropout=0.5)
 
-        # self.batchnorm1d = nn.BatchNorm1d(1024)
-        self.fc1 = nn.Linear(rnn_size, 128)
-        # self.fc2 = nn.Linear(256, 128)
-        self.fc3 = nn.Linear(128, num_categories)
+        self.batchnorm1d_n = nn.BatchNorm1d(128)
+        self.fc1_n = nn.Linear(rnn_size, 128)
+        self.fc3_n = nn.Linear(128, num_categories)
 
         if use_cuda is not None:
             self.use_cuda = use_cuda
@@ -63,9 +62,8 @@ class Encoder(nn.Module):
         output, (hidden, _) = self.rnn(rnn_in)
 
         hidden = hidden.view(batch_size, self.rnn_size)
-        out = F.relu(self.fc1(hidden))
-        # out = F.relu(self.fc2(out))
-        return self.fc3(out)
+        out = F.relu(self.batchnorm1d_n(self.fc1_n(hidden)))
+        return self.fc3_n(out)
 
 
     def random_crop(self, tensor, w_new, h_new=None):

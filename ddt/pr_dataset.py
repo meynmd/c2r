@@ -1,4 +1,4 @@
-import os, random
+import sys, os, random
 import glob
 import numpy as np
 import torch
@@ -26,8 +26,8 @@ class PianoRollDataset(Dataset):
             if filenames:
                 class_list = [(f, d) for f in filenames]
                 self.xys += class_list
-                self.x_counts[self.name2idx[d.replace("-", " ")]] = len(class_list)
-                self.y2x[d.replace("-", " ")] = class_list
+                self.x_counts[self.name2idx[d]] = len(class_list)
+                self.y2x[d] = class_list
 
     def __len__(self):
         return len(self.xys)
@@ -44,15 +44,16 @@ class PianoRollDataset(Dataset):
             x[:t, :] = 0.
 
         x = torch.from_numpy(x).type(torch.float)
-        y = y.replace("-", " ")
+        # y = y.replace("-", " ")
         y = self.name2idx[y]
         return x, y
 
     def get_from_class(self, class_label):
         for x_path, y in self.y2x[class_label]:
+            print('loading {}'.format(x_path), file=sys.stderr)
             x = torch.from_numpy(np.load(x_path))
             x = x.float()
-            y = y.replace("-", " ")
+            # y = y.replace("-", " ")
             yield (x, self.name2idx[y]), (x_path, y)
 
     def idx2onehot(self, idx, size):
@@ -67,5 +68,5 @@ class PianoRollDataset(Dataset):
         return len(self.x_counts)
 
     def get_all_labels(self):
-        return self.x_counts.keys()
+        return self.name2idx.keys()
 
