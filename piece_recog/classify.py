@@ -12,7 +12,7 @@ from torch.utils.data.dataloader import DataLoader
 from torch.autograd import Variable
 from torch import cuda
 
-import conv_classifier
+import sparse_feature_conv_classifier
 from fragments_dataset import FragmentsDataset
 
 
@@ -64,28 +64,37 @@ def train(model, phase, dataloader, batch_size, loss_fn, optim, num_epochs=50, m
                 else:
                     # make best prediction and find err
                     _, y_hat = torch.max(z, 1)
-                    err += (y_hat.data != y.data).sum().item()
+                    err += (y_hat.data != y.data).sum().item() / float(x.shape[0])
 
             # print progress
             avg_loss = running_loss / float(i + 1)
             print("{} loss: {:.5}".format(phase, avg_loss))
             if phase != 'train':
-                print("{} err: {:.0%}".format(phase, float(err) / (batch_size*float(i + 1))))
+                print("{} err: {:.0%}".format(phase, float(err) / float(i + 1)))
+            sys.stdout.flush()
 
             # save model if best so far, or every 100 epochs
             if phase == "val":
-                if avg_loss < best_loss or (epoch % 99 == 0 and epoch >= 99):
+                if avg_loss < best_loss:
                     if epoch > 99:
                         save_name = "model-loss{:.3}-epoch{}".format(avg_loss, epoch + 1)
                         # save_name += "-".join(time.asctime().split(" ")[:-1]).replace(":", ".")
                     else:
                         save_name = "model-best"
-                    save_name += ".pt"
+                    # save_name += ".pt"
                     save_path = "{}/{}".format(model_dir, save_name)
                     torch.save(model.state_dict(), save_path)
                     print("Model saved to {}".format(save_path))
+
+                elif (epoch + 1) % 100 == 0 and epoch > 0:
+                    save_name = "model-epoch{}-loss{:.3}".format(epoch + 1, avg_loss)
+                    save_path = "{}/{}".format(model_dir, save_name)
+                    torch.save(model.state_dict(), save_path)
+                    print("Model saved to {}".format(save_path))
+
                 sys.stdout.flush()
                 best_loss = min(best_loss, avg_loss)
+
         print(80*"*")
     print()
 
@@ -116,14 +125,15 @@ def main(opts):
     }
 
     # set up the model
-    net = conv_classifier.ConvClassifier(
+    net = sparse_feature_conv_classifier.Encoder(
         datasets["train"].get_y_count(),
         opts.batch_size,
         opts.window_size,
         use_cuda=cuda_dev,
     )
     if opts.load:
-        net.load_state_dict(torch.load(opts.load), strict=False)
+        saved_state = torch.load(opts.load, map_location='cpu')
+        net.load_state_dict(saved_state, strict=False)
     if cuda_dev is not None:
         net = net.cuda(cuda_dev)
 
@@ -141,7 +151,7 @@ def main(opts):
             print("error: option --freeze only makes sense with option --load")
             exit(1)
         else:
-            freeze_modules = [net.conv1, net.conv2, net.conv3, net.conv4, net.batchnorm128, net.batchnorm64]
+            freeze_modules = [net.conv1, net.conv2, net.conv3, net.batchnorm128, net.batchnorm64]
             for m in freeze_modules:
                 freeze_params += list(m.parameters())
             learn_params = list(set(learn_params) - set(freeze_params))

@@ -37,11 +37,11 @@ def test(model, data, num_per_class, cuda_dev):
     for i, label in labels:
         # get (x, y)'s from dataset object, select num_per_class of them
         class_datapoints = list(data.get_from_class(label))
-        random.shuffle(class_datapoints)
+        # random.shuffle(class_datapoints)
         num_d = min(num_per_class, len(class_datapoints))
         probs = np.zeros(num_classes) # [0. for j in range(len(data.get_all_labels()))]
         preds = np.zeros(num_classes)
-        for x, y in class_datapoints[:num_d]:
+        for (x, y), _ in class_datapoints[:num_d]:
             model.eval()
             if x.shape[1] > model.max_w:
                 x = random_crop(x, model.max_w)
@@ -109,7 +109,7 @@ def main(opts):
         cuda_dev = None
 
     # load the data
-    dataset = pr_dataset.PianoRollDataset(os.getcwd() + "/" + opts.data_dir, "labels.csv", "val")
+    dataset = pr_dataset.PianoRollDataset(os.getcwd() + "/" + opts.data_dir, "labels.csv", "test")
 
     # load the model
     enc = encoder.Encoder(
@@ -122,11 +122,12 @@ def main(opts):
     )
 
     if opts.load:
-        enc.load_state_dict(torch.load(opts.load))
+        saved_state = torch.load(opts.load, map_location='cpu')
+        enc.load_state_dict(saved_state)
     if cuda_dev is not None:
         enc = enc.cuda(cuda_dev)
 
-    test(enc, dataset, 100, opts.use_cuda)
+    test(enc, dataset, 1000, opts.use_cuda)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

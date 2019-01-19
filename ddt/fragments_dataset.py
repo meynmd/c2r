@@ -10,7 +10,7 @@ class DataList(list):
 
 class FragmentsDataset(Dataset):
     # dataset representing fragments of music scores as 2d matrices (pitch x time)
-    def __init__(self, data_root, label_dict_file, phase="train"):
+    def __init__(self, data_root, label_dict_file, class_name, phase="train"):
         self.root = data_root
         self.xys = []
         self.x_counts = {}
@@ -19,14 +19,15 @@ class FragmentsDataset(Dataset):
             name_num = [line.strip().split(",") for line in fp.readlines()]
             self.name2idx = {n : int(i) for n, i in name_num}
             self.idx2name = {int(i) : n for n, i in name_num}
-        for d in os.listdir(data_root):
-            filenames = glob.glob(data_root + "/" + d + "/" + phase + "/*.npy")
-            if filenames:
-                class_list = [(f, d) for f in filenames]
-                self.xys += class_list
-                self.x_counts[self.name2idx[d]] = len(class_list)
-                # self.y2x[d.replace("-", " ")] = class_list
-                self.y2x[d] = class_list
+
+        filenames = glob.glob(data_root + "/" + class_name + "/" + phase + "/*.npy")
+        if filenames:
+            class_list = [(f, class_name) for f in filenames]
+            self.xys += class_list
+            # self.x_counts[self.name2idx[d]] = len(class_list)
+            # self.x_counts[self.name2idx[d.replace('-', ' ')]] = len(class_list)
+            self.y2x[class_name.replace("-", " ")] = class_list
+            # self.y2x[d] = class_list
 
     def __len__(self):
         return len(self.xys)
@@ -37,7 +38,7 @@ class FragmentsDataset(Dataset):
         x = x.float()
         # y = y.replace("-", " ")
         y = self.name2idx[y]
-        return x, y
+        return x #, y
 
     def get_from_class(self, class_label):
         for x_path, y in self.y2x[class_label]:
@@ -45,6 +46,7 @@ class FragmentsDataset(Dataset):
             x = x.float()
             # y = y.replace("-", " ")
             yield (x, self.name2idx[y]), (x_path, y)
+
 
     def idx2onehot(self, idx, size):
         vec = torch.FloatTensor(size).fill_(0.)

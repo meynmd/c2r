@@ -27,7 +27,7 @@ def available_regions(arr_len, reserved_idxs, chunk_length):
     return bounds
 
 
-def make_data(data_dir, output_dir, chunk_length, min_num_chunks=20, frac_val=0.2, max_overlap=0.8, label_file='labels.csv'):
+def make_data(data_dir, output_dir, chunk_length, min_num_chunks=5, frac_val=0.2, max_overlap=0.8, label_file='labels.csv'):
     input_files = glob.glob(os.path.join(data_dir, '*.npy'))
     label2file = {os.path.basename(f).split('.')[0].split('(')[0] : f for f in input_files}
 
@@ -62,7 +62,7 @@ def make_data(data_dir, output_dir, chunk_length, min_num_chunks=20, frac_val=0.
             print('val_idxs: {}'.format(sorted(list(val_idxs))))
 
             for j, idx in enumerate(val_idxs):
-                lb, rb = j*chunk_length + tf_offset, (j + 1)*chunk_length + tf_offset
+                lb, rb = idx*chunk_length + tf_offset, (idx + 1)*chunk_length + tf_offset
                 x = mat[:, lb : rb]
                 filename = os.path.join(class_path, 'val', '{}_{}-{}'.format(label, lb, rb))
                 np.save(filename, x)
