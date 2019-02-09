@@ -5,10 +5,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.dataloader import default_collate
 
-class DataList(list):
-    pass
-
-class PianoRollDataset(Dataset):
+class ComposerDataset(Dataset):
     # dataset representing music scores as 2d matrices (pitch x time)
     def __init__(self, data_root, label_dict_file, phase="train", seed=0, classname=None):
         random.seed(seed)
@@ -24,15 +21,6 @@ class PianoRollDataset(Dataset):
             self.name2idx = {n : int(i) for n, i in name_num}
             self.idx2name = {int(i) : n for n, i in name_num}
 
-        if classname is None:
-            for d in os.listdir(data_root):
-                filenames = glob.glob(data_root + "/" + d + "/" + phase + "/*.npy")
-                if filenames:
-                    class_list = [(f, d) for f in filenames]
-                    self.xys += class_list
-                    self.x_counts[self.name2idx[d.replace("-", " ")]] = len(class_list)
-                    self.y2x[d.replace("-", " ")] = class_list
-        else:
             data_dir = os.path.join(data_root, classname, phase)
             data_files = glob.glob(data_dir + "/*.npy")
             if data_files:

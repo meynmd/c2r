@@ -11,9 +11,10 @@ import torch.nn.functional as F
 from torch.utils.data.dataloader import DataLoader
 from torch.autograd import Variable
 
-import pr_dataset
+import composer_dataset
 import pixel_cnn
 
+# train a model for one category
 
 def random_crop(tensor, w_new, h_new=None):
     h, w = tensor.shape[2], tensor.shape[3]
@@ -54,7 +55,7 @@ def make_batch(tensors, max_w, cuda_dev, left_pad=512):
 
 def train(
         net, dataloader, optim,
-        num_epochs=50, model_dir="model", cuda_dev=None, lr_decay=0., max_w=1024, left_pad=0
+        num_epochs=50, model_dir="model", cuda_dev=None, lr_decay=0., max_w=1024, left_pad=0, neg_pos=None
 ):
     best_loss = float("inf")
     phases = ['train', 'val']
@@ -74,18 +75,6 @@ def train(
                 x, _ = data
                 batch_size = len(x)
                 x = make_batch(x, max_w, cuda_dev, left_pad=max_w - 1)
-
-                '''
-                    num_ones, num_elem = 0., 0.
-                    for x, _ in dataloaders['train']:
-                        for sample in x:
-                            num_ones += torch.sum(sample).item()
-                            num_elem += torch.numel(sample)
-                    positive_weight = (num_elem - num_ones) / num_ones
-                '''
-
-                # num_ones = torch.sum(x).item()
-                # positive_weight = (torch.numel(x) - num_ones) / num_ones
 
                 num_ones = torch.sum(x, -1)
                 num_ones = torch.sum(num_ones, 0).squeeze(0)
@@ -128,6 +117,8 @@ def train(
             sys.stdout.flush()
 
 
+
+
 def main(opts):
     # training script
     if opts.use_cuda is not None:
@@ -136,12 +127,17 @@ def main(opts):
     else:
         cuda_dev = None
     torch.manual_seed(opts.seed)
-    print("generative model training\nrandom seed {}".format(opts.seed))
+    print("random seed {}".format(opts.seed))
     sys.stdout.flush()
 
     # initialize data loader
-    datasets = { p : pr_dataset.PianoRollDataset(os.getcwd() + "/" + opts.data_dir, "labels.csv", p)
+    datasets = { p : composer_dataset.ComposerDataset(
+                 os.getcwd() + "/" + opts.data_dir, "labels.csv", p, classname=opts.classname)
                  for p in ("train", "val") }
+
+    classname = opts.classname
+    # train_datapoints, val_datapoints = (list(datasets[phase].get_from_class(classname)) for phase in ["train", "val"])
+
     dataloaders = {
         p : DataLoader(
             datasets[p],
@@ -161,14 +157,6 @@ def main(opts):
         net.load_state_dict(saved_state)
     if cuda_dev is not None:
         net = net.cuda(cuda_dev)
-
-    # set up the loss function and optimizer
-    # num_ones, num_elem = 0., 0.
-    # for x, _ in dataloaders['train']:
-    #     for sample in x:
-    #         num_ones += torch.sum(sample).item()
-    #         num_elem += torch.numel(sample)
-    # positive_weight = (num_elem - num_ones) / num_ones
 
     optim = torch.optim.SGD(net.parameters(), float(opts.init_lr), momentum=0.9)
 
@@ -196,6 +184,7 @@ if __name__ == "__main__":
     parser.add_argument("-l", "--init_lr", default="10e-5")
     parser.add_argument("--load", default=None)
     parser.add_argument("--left_pad", default=None)
+    parser.add_argument("--classname", required=True)
 
     args = parser.parse_args()
     main(args)
