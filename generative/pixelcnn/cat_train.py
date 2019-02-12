@@ -13,6 +13,7 @@ from torch.autograd import Variable
 
 import composer_dataset
 import pixel_cnn
+import focal_loss
 
 # train a model for one category
 
@@ -54,75 +55,100 @@ def make_batch(tensors, max_w, cuda_dev, left_pad=512):
 
 
 def train(
-        net, dataloader, optim,
+        net, dataloaders, optim, loss_fn,
         num_epochs=50, model_dir="model", cuda_dev=None, lr_decay=0., max_w=1024, left_pad=0, neg_pos=None
 ):
-    best_loss = float("inf")
-    phases = ['train', 'val']
     for epoch in range(num_epochs):
         optim.param_groups[0]['lr'] *= (1. - lr_decay)
 
         print("\n" + 80*"*" + "\nEpoch {}\tlr {}\n".format(epoch + 1, optim.param_groups[0]['lr']))
 
-        for phase in phases:
-            running_loss, err = 0., 0.
-            if phase == "train":
-                net.train()
-            else:
-                net.eval()
+        running_loss, err = 0., 0.
+        train_epoch(net, dataloaders['train'], optim, loss_fn, cuda_dev, max_w, left_pad)
 
-            for i, data in enumerate(dataloader[phase]):
-                x, _ = data
-                batch_size = len(x)
-                x = make_batch(x, max_w, cuda_dev, left_pad=max_w - 1)
+        val_loss = run_loss(net, dataloaders['val'], loss_fn, cuda_dev, max_w)
 
-                num_ones = torch.sum(x, -1)
-                num_ones = torch.sum(num_ones, 0).squeeze(0)
-                num_ones = num_ones + torch.ones(num_ones.shape).cuda(cuda_dev) * 1e-3
-                positive_weight = (torch.ones(num_ones.shape).cuda(cuda_dev)*(x.shape[0] * x.shape[-1]) - num_ones) / num_ones
+        print('epoch {}\tval loss: {:.3}'.format(epoch + 1, val_loss))
 
-                optim.zero_grad()
-                target = x.clone()
-                yh = net(x)
-                w = torch.ones(target.shape).cuda(cuda_dev)
-                for row in range(w.shape[-2]):
-                    w[:, :, row, :] *= positive_weight[row]
-                loss = F.binary_cross_entropy_with_logits(yh, target, pos_weight=w)
-                loss.backward()
-                optim.step()
+        if (epoch + 1) % 50 == 0 and epoch > 0:
+            save_name = "checkpoint-epoch{}-loss{:.3}.pt".format(epoch + 1, val_loss)
+            save_path = "{}/{}".format(model_dir, save_name)
+            torch.save(net.state_dict(), save_path)
+            print("Model checkpoint saved to {}".format(save_path))
 
-                if phase == 'train':
-                    if i % 200 == 0:
-                        print('iter {:3}\ttrain loss: {:.3}'.format(i+1, loss))
-                        sys.stdout.flush()
-                else:
-                    running_loss += loss
+        # elif avg_loss < best_loss:
+        #     best_loss = avg_loss
+        #     save_name = "model-loss{:.3}-epoch{}.pt".format(avg_loss, epoch + 1)
+        #     save_path = os.path.join(os.getcwd(), model_dir, save_name)
+        #     torch.save(net.state_dict(), save_path)
+        #     print("Model saved to {}".format(save_path))
 
-            if phase == 'val':
-                avg_loss = running_loss / (i+1)
-                print('epoch {}\tval loss: {:.3}'.format(epoch+1, avg_loss))
-                if phase == "val" and (epoch + 1) % 100 == 0 and epoch > 0:
-                    save_name = "checkpoint-epoch{}-loss{:.3}.pt".format(epoch + 1, avg_loss)
-                    save_path = "{}/{}".format(model_dir, save_name)
-                    torch.save(net.state_dict(), save_path)
-                    print("Model checkpoint saved to {}".format(save_path))
-                elif avg_loss < best_loss:
-                    best_loss = avg_loss
-                    save_name = "model-loss{:.3}-epoch{}.pt".format(avg_loss, epoch + 1)
-                    save_path = os.path.join(os.getcwd(), model_dir, save_name)
-                    torch.save(net.state_dict(), save_path)
-                    print("Model saved to {}".format(save_path))
-
-            print(80 * '-')
-            sys.stdout.flush()
+        print(80 * '-')
+        sys.stdout.flush()
 
 
+def run_loss(net, dataloader, loss_fn, cuda_dev=None, max_w=1024):
+    net.eval()
+    total_loss = 0.
+    for i, data in enumerate(dataloader):
+        x, _ = data
+        batch_size = len(x)
+        x = make_batch(x, max_w, cuda_dev, left_pad=max_w - 1)
+
+        num_ones = torch.sum(x, -1)
+        num_ones = torch.sum(num_ones, 0).squeeze(0)
+        num_ones = num_ones + torch.ones(num_ones.shape).cuda(cuda_dev) * 1e-3
+        positive_weight = (torch.ones(num_ones.shape).cuda(cuda_dev) * (x.shape[0] * x.shape[-1]) - num_ones) / num_ones
+
+        target = x.clone()
+        yh = net(x)
+        w = torch.ones(target.shape).cuda(cuda_dev)
+        for row in range(w.shape[-2]):
+            w[:, :, row, :] *= positive_weight[row]
+
+        # loss = F.binary_cross_entropy_with_logits(yh, target, pos_weight=w, reduction='none')
+        loss = loss_fn(yh, target, w)
+        total_loss += loss.cpu().item()
+
+    avg_loss = total_loss / len(dataloader)
+    return avg_loss
+
+
+def train_epoch(net, dataloader, optim, loss_fn, cuda_dev=None, max_w=1024, left_pad=0):
+        net.train()
+        for i, data in enumerate(dataloader):
+            x, _ = data
+            batch_size = len(x)
+            x = make_batch(x, max_w, cuda_dev, left_pad=max_w - 1)
+
+            num_ones = torch.sum(x, -1)
+            num_ones = torch.sum(num_ones, 0).squeeze(0)
+            num_ones = num_ones + torch.ones(num_ones.shape).cuda(cuda_dev) * 1e-3
+            positive_weight = (torch.ones(num_ones.shape).cuda(cuda_dev)*(x.shape[0] * x.shape[-1]) - num_ones) / num_ones
+
+            target = x.clone()
+            yh = net(x)
+
+            w = None
+            # w = torch.ones(target.shape).cuda(cuda_dev)
+            # for row in range(w.shape[-2]):
+            #     w[:, :, row, :] *= positive_weight[row]
+
+            optim.zero_grad()
+            # loss = F.binary_cross_entropy_with_logits(yh, target, pos_weight=w, reduction='none')
+            loss = loss_fn(yh, target, w)
+            loss.backward()
+            optim.step()
+
+            if i % 200 == 0:
+                print('iter {:3}\ttrain loss: {:.3}'.format(i+1, loss))
+                sys.stdout.flush()
 
 
 def main(opts):
     # training script
     if opts.use_cuda is not None:
-        print("using CUDA device {}".format(opts.use_cuda))
+        print("categorical training\nusing CUDA device {}".format(opts.use_cuda))
         cuda_dev = int(opts.use_cuda)
     else:
         cuda_dev = None
@@ -166,8 +192,11 @@ def main(opts):
     if opts.left_pad is None:
         opts.left_pad = opts.max_w - 1
 
+    loss_function = focal_loss.FocalLoss()
+
     train(
-        net, dataloaders, optim, opts.max_epochs, opts.model_dir, cuda_dev,
+        net, dataloaders, optim, loss_function,
+        opts.max_epochs, opts.model_dir, cuda_dev,
         max_w=opts.max_w, left_pad=opts.left_pad
     )
 

@@ -49,15 +49,20 @@ def find_cross_entropy(net, class_datapoints, cuda_dev=None, batch_size=8, max_w
 
         num_class_batches += len(x_batches)
 
+        sample_ce = torch.zeros(len(x_batches))
         for j, batch in enumerate(x_batches):
             target = batch.clone()
             batch, target = batch.cuda(cuda_dev), target.cuda(cuda_dev)
             z = net(batch)
-            bce = F.binary_cross_entropy_with_logits(z, target)
-            cross_entropies[i] = bce
-            class_ce_sum += bce.cpu().item()
+            sample_ce[j] = F.binary_cross_entropy_with_logits(z, target)
 
-    avg_class_ce = class_ce_sum / num_class_batches
+            # class_ce_sum += bce.cpu().item()
+
+        avg_ce = torch.mean(sample_ce)
+
+        cross_entropies[i] = avg_ce.item()
+
+    # avg_class_ce = class_ce_sum / num_class_batches
     return cross_entropies #avg_class_ce
 
 
@@ -79,14 +84,20 @@ def main(opts):
         values = [line.strip().split(',') for line in fp.readlines()]
         class_avg_entropies = {c.replace('-', ' ') : float(v) for c, v in values}
 
+
     labels = dataset.idx2name.items()
     if opts.classes is not None:
         labels = [l for i, l in labels if l in opts.classes]
     print (labels)
     label2idx = {l : i for (i, l) in enumerate(labels)}
 
+    net = pixel_cnn.PixelCNN(1, 32, 64)
+    for param in net.parameters():
+        param.requires_grad = False
+
     num_classes = len(labels)
     class_ces = np.zeros([num_classes, num_classes])
+    accuracy = {}
     for i, data_label in enumerate(labels):
         print('identifying class {}'.format(data_label), file=sys.stderr)
         class_datapoints = list(dataset.get_from_class(data_label))
@@ -96,23 +107,27 @@ def main(opts):
             saved_state = torch.load(weights_file, map_location='cpu')
             # initialize network
             # in_channels, h_channels, discrete_channels
-            net = pixel_cnn.PixelCNN(1, 32, 64)
+
             net.load_state_dict(saved_state)
             if cuda_dev is not None:
                 net = net.cuda(cuda_dev)
 
             # find_cross_entropy returns an array of cross entropies indexed by example
+            #cross_entropies[:, j]
             cross_entropies[:, j] = find_cross_entropy(
                 net, class_datapoints, cuda_dev, batch_size=opts.batch_size, max_w=opts.max_w, left_pad=opts.left_pad,
-                stride=10
+                stride=100
             ).cpu()
 
-            cross_entropies[:, j] /= class_avg_entropies[model_label]
-            #print('\t{} model gives cross entropy:\t{}'.format(model_label, class_ces[i, j]), file=sys.stderr)
-
-            del net
+            cross_entropies[:, j] /= class_avg_entropies[model_label]   # normalize by mean entropy for this model
+            print('\t{} model gives cross entropy:\t{}'.format(model_label, torch.mean(cross_entropies[:, j])), file=sys.stderr)
 
         predictions = torch.argmin(cross_entropies, dim=1)
+        num_correct = torch.sum(predictions == i).cpu().item()
+        accuracy[i] = num_correct / float(predictions.shape[0])
+        print('accuracy for class {}: {}'.format(data_label, accuracy[i]))
+
+        class_ces[i, :] = torch.mean(cross_entropies, dim=0)
 
 
     # print("*"*10, "Normalized cross entropies:", "*"*10, "\n")
@@ -129,13 +144,14 @@ def main(opts):
     for i, sl in enumerate(short_label):
         print(sl, end="   ")
         for j in range(class_ces.shape[1]):
-            print("{:8.3}".format(class_ces[i][j]), end="   ")
+            print("{:8.4}".format(class_ces[i][j]), end="   ")
         print()
 
     print()
     predicted_classes = np.argmin(class_ces, axis=1)
     for i, label in enumerate(labels):
         print('{} predicted as {}'.format(label, labels[predicted_classes[i]]))
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

@@ -92,7 +92,6 @@ def train(model, phase, dataloader, batch_size, loss_fn, optim, num_epochs=50, m
                 z = model(x)
                 loss = loss_fn(z, y)
 
-
                 # update model
                 if phase == "train":
                     running_loss += loss.data.item()
