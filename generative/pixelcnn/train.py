@@ -54,7 +54,7 @@ def make_batch(tensors, max_w, cuda_dev, left_pad=512):
 
 def train(
         net, dataloader, optim,
-        num_epochs=50, model_dir="model", cuda_dev=None, lr_decay=0., max_w=1024, left_pad=0
+        num_epochs=50, model_dir="model", cuda_dev=None, lr_decay=0., max_w=1024, left_pad=0, pos_frac=None
 ):
     best_loss = float("inf")
     phases = ['train', 'val']
@@ -95,10 +95,13 @@ def train(
                 optim.zero_grad()
                 target = x.clone()
                 yh = net(x)
-                w = torch.ones(target.shape).cuda(cuda_dev)
-                for row in range(w.shape[-2]):
-                    w[:, :, row, :] *= positive_weight[row]
-                loss = F.binary_cross_entropy_with_logits(yh, target, pos_weight=w)
+                
+                # w = torch.ones(target.shape).cuda(cuda_dev)
+                # for row in range(w.shape[-2]):
+                #     w[:, :, row, :] *= positive_weight[row]
+                
+                # loss = F.binary_cross_entropy_with_logits(yh, target, pos_weight=w)
+                
                 loss.backward()
                 optim.step()
 
@@ -163,12 +166,13 @@ def main(opts):
         net = net.cuda(cuda_dev)
 
     # set up the loss function and optimizer
-    # num_ones, num_elem = 0., 0.
-    # for x, _ in dataloaders['train']:
-    #     for sample in x:
-    #         num_ones += torch.sum(sample).item()
-    #         num_elem += torch.numel(sample)
-    # positive_weight = (num_elem - num_ones) / num_ones
+    num_ones, num_elem = 0., 0.
+    for x, _ in dataloaders['train']:
+        for sample in x:
+            num_ones += torch.sum(sample).item()
+            num_elem += torch.numel(sample)
+    positive_weight = (num_elem - num_ones) / num_ones
+    frac_ones = num_ones / num_elem
 
     optim = torch.optim.SGD(net.parameters(), float(opts.init_lr), momentum=0.9)
 
@@ -180,7 +184,7 @@ def main(opts):
 
     train(
         net, dataloaders, optim, opts.max_epochs, opts.model_dir, cuda_dev,
-        max_w=opts.max_w, left_pad=opts.left_pad
+        max_w=opts.max_w, left_pad=opts.left_pad, pos_frac=frac_ones
     )
 
 

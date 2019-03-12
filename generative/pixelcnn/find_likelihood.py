@@ -8,8 +8,8 @@ from torch.utils.data.dataloader import DataLoader
 from torch.autograd import Variable
 
 import pr_dataset
-import pixel_cnn
-
+# import pixel_cnn
+import v2.cnn as auto
 
 def crop_and_batch(orig_tensor, window_len, stride, max_batch):
     assert(orig_tensor.shape[1] >= window_len)
@@ -76,7 +76,7 @@ def main(opts):
     sys.stdout.flush()
 
     # initialize data loader
-    dataset = pr_dataset.PianoRollDataset(os.path.join(os.getcwd(), opts.data_dir), "labels.csv", 'test')
+    dataset = pr_dataset.PianoRollDataset(os.path.join(os.getcwd(), opts.data_dir), 'labels.csv', 'test')
 
     weights_dir = os.path.join(os.getcwd(), opts.weights)
 
@@ -84,14 +84,15 @@ def main(opts):
         values = [line.strip().split(',') for line in fp.readlines()]
         class_avg_entropies = {c.replace('-', ' ') : float(v) for c, v in values}
 
-
     labels = dataset.idx2name.items()
     if opts.classes is not None:
-        labels = [l for i, l in labels if l in opts.classes]
+        selected_labels = [s.replace('-', ' ') for s in opts.classes]
+        labels = [l for i, l in labels if l in selected_labels]
     print (labels)
     label2idx = {l : i for (i, l) in enumerate(labels)}
 
-    net = pixel_cnn.PixelCNN(1, 32, 64)
+    # net = pixel_cnn.PixelCNN(1, 32, 64)
+    net = auto.AutoEncoder(opts.batch_size, cuda_dev, opts.max_w)
     for param in net.parameters():
         param.requires_grad = False
 
@@ -119,7 +120,7 @@ def main(opts):
                 stride=100
             ).cpu()
 
-            cross_entropies[:, j] /= class_avg_entropies[model_label]   # normalize by mean entropy for this model
+            # cross_entropies[:, j] /= class_avg_entropies[model_label]   # normalize by mean entropy for this model
             print('\t{} model gives cross entropy:\t{}'.format(model_label, torch.mean(cross_entropies[:, j])), file=sys.stderr)
 
         predictions = torch.argmin(cross_entropies, dim=1)
@@ -138,6 +139,7 @@ def main(opts):
     for label in labels:
         l = min(8, len(label))
         short_label.append("{:>8}".format(label[:l]))
+    print(11*' ', end='')
     for sl in short_label:
         print("{}".format(sl), end="   ")
     print()

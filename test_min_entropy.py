@@ -5,25 +5,23 @@ import random
 import numpy as np
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data.dataloader import DataLoader
-from torch.autograd import Variable
-from torch import cuda
 
-import crnn as encoder #encoder
+# import crnn_v6 as encoder
+import crnn as encoder
+
 import pr_dataset
 
-def random_crop(tensor, w_new, h_new=None):
-    h, w = tensor.shape[0], tensor.shape[1]
-    top, left = 0, 0
-    if w_new < w:
-        left = np.random.randint(0, w - w_new)
-    if h_new is None:
-        return tensor[:, left : left + w_new]
-    if h_new < h:
-        top = np.random.randint(0, h - h_new)
-    return tensor[top : top + h_new, left : left + w_new]
+# def random_crop(tensor, w_new, h_new=None):
+#     h, w = tensor.shape[0], tensor.shape[1]
+#     top, left = 0, 0
+#     if w_new < w:
+#         left = np.random.randint(0, w - w_new)
+#     if h_new is None:
+#         return tensor[:, left : left + w_new]
+#     if h_new < h:
+#         top = np.random.randint(0, h - h_new)
+#     return tensor[top : top + h_new, left : left + w_new]
 
 
 def crop_and_batch(orig_tensor, window_len, stride, max_batch):
@@ -104,6 +102,9 @@ def test(model, data, num_per_class, cuda_dev, stride, tf_output_file):
         correct[i] /= num_d
         predict_confusion[:, i] = preds / num_d
 
+        print('{} accuracy rate:\t{}'.format(label, correct[i]), file=sys.stderr)
+        sys.stderr.flush()
+
     print("*"*10, "Probabilities", "*"*10, "\n")
     print(" " * 11, end="")
     short_label = []
@@ -163,6 +164,9 @@ def main(opts):
         max_w=opts.max_w
     )
 
+    print('evaluating model architecture {}'.format(enc.name), file=sys.stderr)
+    sys.stderr.flush()
+
     if opts.load:
         saved_state = torch.load(opts.load, map_location='cpu')
         enc.load_state_dict(saved_state)
@@ -175,28 +179,21 @@ def main(opts):
     timeframe_output_file = open(args.tf_file, 'w')
     timeframe_output_file.write('composer,piece,begin_tf,end_tf')
 
-    test(enc, dataset, 1000, opts.use_cuda, opts.stride, timeframe_output_file)
+    with torch.no_grad():
+        test(enc, dataset, 1000, opts.use_cuda, opts.stride, timeframe_output_file)
 
     timeframe_output_file.close()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rnn_size", type=int, default=128)
-    parser.add_argument("--rnn_layers", type=int, default=3)
-    parser.add_argument("--data_dir", default="preprocessed")
-    parser.add_argument("--max_epochs", type=int, default=1000)
-    parser.add_argument("--max_w", type=int, default=5000)
-    parser.add_argument("--test", action="store_true")
-    parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("-m", "--model_dir", default="model")
-    parser.add_argument("-e", "--num_epochs", type=int, default=5)
-    parser.add_argument("--tf_file", default="best_timeframes.csv")
-    parser.add_argument("--num_batch_valid", type=int, default=1)
-    parser.add_argument("--beam_size", type=int, default=5)
-    parser.add_argument("-s", "--seed", type=int, default=0)
+    parser.add_argument("--rnn_size", type=int, default=1024)
+    parser.add_argument("--rnn_layers", type=int, default=1)
+    parser.add_argument("--data_dir", default="clean_preproc")
+    parser.add_argument("--max_w", type=int, default=1024)
+    parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--tf_file", default="junk/best_timeframes.csv")
     parser.add_argument("-c", "--use_cuda", type=int, default=None)
-    parser.add_argument("-l", "--init_lr", type=int, default=5)
     parser.add_argument("--load", default=None)
     parser.add_argument("--stride", type=int, default=100)
 

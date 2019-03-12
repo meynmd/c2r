@@ -11,7 +11,7 @@ from torch.utils.data.dataloader import DataLoader
 from torch.autograd import Variable
 from torch import cuda
 
-import encoder
+import crnn_v6 as encoder
 import pr_dataset
 
 
@@ -109,7 +109,7 @@ def main(opts):
         cuda_dev = None
 
     # load the data
-    dataset = pr_dataset.PianoRollDataset(os.getcwd() + "/" + opts.data_dir, "labels.csv", "test")
+    dataset = pr_dataset.PianoRollDataset(os.getcwd() + "/" + opts.data_dir, "labels.csv", opts.phase)
 
     # load the model
     enc = encoder.Encoder(
@@ -120,6 +120,8 @@ def main(opts):
         use_cuda=cuda_dev,
         max_w=opts.max_w
     )
+    print('evaluating model architecture {}'.format(enc.name), file=sys.stderr)
+    sys.stderr.flush()
 
     if opts.load:
         saved_state = torch.load(opts.load, map_location='cpu')
@@ -131,21 +133,14 @@ def main(opts):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rnn_size", type=int, default=128)
-    parser.add_argument("--rnn_layers", type=int, default=3)
-    parser.add_argument("--data_dir", default="preprocessed")
-    parser.add_argument("--max_epochs", type=int, default=1000)
-    parser.add_argument("--max_w", type=int, default=5000)
-    parser.add_argument("--test", action="store_true")
+    parser.add_argument("--rnn_size", type=int, default=1024)
+    parser.add_argument("--rnn_layers", type=int, default=1)
+    parser.add_argument("--data_dir", default="clean_preproc")
+    parser.add_argument("--max_w", type=int, default=1024)
     parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("-m", "--model_dir", default="model")
-    parser.add_argument("-e", "--num_epochs", type=int, default=5)
-    parser.add_argument("--num_batch_valid", type=int, default=1)
-    parser.add_argument("--beam_size", type=int, default=5)
-    parser.add_argument("-s", "--seed", type=int, default=0)
     parser.add_argument("-c", "--use_cuda", type=int, default=None)
-    parser.add_argument("-l", "--init_lr", type=int, default=5)
     parser.add_argument("--load", default=None)
+    parser.add_argument("--phase", default='test')
 
     args = parser.parse_args()
     main(args)

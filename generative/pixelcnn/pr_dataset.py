@@ -10,14 +10,16 @@ class DataList(list):
 
 class PianoRollDataset(Dataset):
     # dataset representing music scores as 2d matrices (pitch x time)
-    def __init__(self, data_root, label_dict_file, phase="train", seed=0, classname=None):
+    def __init__(self, data_root, label_dict_file, phase="train", seed=0, classname=None, pitch_range=(21, 109)):
         random.seed(seed)
         self.tgt_classname = classname
         self.root = data_root
+        self.length = 0
         self.xys = []
         self.x_counts = {}
         self.y2x = {}
         self.phase = phase
+        self.midi_range=pitch_range
 
         with open(data_root + "/" + label_dict_file, "r") as fp:
             name_num = [line.strip().split(",") for line in fp.readlines()]
@@ -29,6 +31,7 @@ class PianoRollDataset(Dataset):
                 filenames = glob.glob(data_root + "/" + d + "/" + phase + "/*.npy")
                 if filenames:
                     class_list = [(f, d) for f in filenames]
+                    self.length += len(class_list)
                     self.xys += class_list
                     self.x_counts[self.name2idx[d.replace("-", " ")]] = len(class_list)
                     self.y2x[d.replace("-", " ")] = class_list
@@ -41,12 +44,14 @@ class PianoRollDataset(Dataset):
                 self.y2x[classname.replace('-', ' ')] = data_files
 
     def __len__(self):
-        return len(self.xys)
+        return self.length
 
     def __getitem__(self, idx):
         x_path, y = self.xys[idx]
         x = np.load(x_path)
         # x = (x > 0.).astype(float)
+        low, high = self.midi_range
+        x = x[low: high, :]
 
         if self.phase == 'train':
             # transpose by random interval
@@ -65,6 +70,9 @@ class PianoRollDataset(Dataset):
     def get_from_class(self, class_label):
         for x_path, y in self.y2x[class_label]:
             x = torch.from_numpy(np.load(x_path))
+            low, high = self.midi_range
+            x = x[low: high, :]
+
             x = x.float()
             y = y.replace("-", " ")
             yield (x, self.name2idx[y]), (x_path, y)

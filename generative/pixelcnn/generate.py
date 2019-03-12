@@ -9,25 +9,63 @@ import torch.nn.functional as F
 from torch.utils.data.dataloader import DataLoader
 from torch.autograd import Variable
 
-import pixel_cnn
+import v2.cnn as pixel_cnn
+
+
+# def generate(net, start_roll, opts):
+#     net.train(False)
+#     start_roll = torch.from_numpy(start_roll)
+#     start_roll = F.pad(start_roll, (opts.left_pad, 0), 'constant', 0.)
+#     sample = torch.zeros(start_roll.shape[0], opts.max_w)
+#     sample[:, opts.left_pad: opts.left_pad + opts.initial_frames] = \
+#         start_roll[:, : opts.initial_frames]
+#         # torch.from_numpy(start_roll[:, : opts.initial_frames])
+#     sample = sample.unsqueeze(0).unsqueeze(0)
+#
+#     if opts.use_cuda is not None:
+#         sample = sample.cuda(opts.use_cuda)
+#
+#     for i in range(opts.left_pad + opts.initial_frames, opts.max_w):
+#         for j in range(start_roll.shape[0]):
+#             z = net(Variable(sample))
+#             p = torch.sigmoid(z[0, 0, j, i]).data
+#             sample[0, 0, j, i] = torch.bernoulli(p)
+#
+#         if i % 100 == 0:
+#             print('{} timeframes generated'.format(i + 1), file=sys.stderr)
+#
+#     return sample.squeeze(0).squeeze(0).cpu().numpy()
 
 
 def generate(net, start_roll, opts):
     net.train(False)
+    start_roll = torch.from_numpy(start_roll)
+
+    p_one = torch.sum(start_roll).item() / torch.numel(start_roll)
+
     sample = torch.zeros(start_roll.shape[0], opts.max_w)
-    sample[:, opts.left_pad: opts.left_pad + opts.initial_frames] = \
-        torch.from_numpy(start_roll[:, : opts.initial_frames])
+
+    ps = torch.zeros(sample.shape)
+
+    sample[:, : opts.initial_frames] = start_roll[:, : opts.initial_frames]
     sample = sample.unsqueeze(0).unsqueeze(0)
 
     if opts.use_cuda is not None:
         sample = sample.cuda(opts.use_cuda)
 
-    for i in range(opts.left_pad + opts.initial_frames, opts.max_w):
-        z = net(Variable(sample))
-        p = torch.sigmoid(z[0, 0, :, i]).data
-        sample[0, 0, :, i] = torch.bernoulli(p)
+
+    for i in range(opts.initial_frames, opts.max_w):
+        for j in range(start_roll.shape[0]):
+            z = net(Variable(sample))
+            p = torch.sigmoid(z[0, 0, j, i]).data
+            # p *= p_one
+            sample[0, 0, j, i] = torch.bernoulli(p)
+            ps[j, i] = p
+
         if i % 100 == 0:
-            print('{} samples generated'.format(i + 1), file=sys.stderr)
+            print('{}/{} timeframes generated'.format(i - opts.initial_frames + 1, opts.max_w - opts.initial_frames),
+                  file=sys.stderr)
+
     return sample.squeeze(0).squeeze(0).cpu().numpy()
 
 
@@ -42,7 +80,8 @@ def main(opts):
     print("random seed {}".format(opts.seed))
     sys.stdout.flush()
 
-    net = pixel_cnn.PixelCNN(1, 32, 64)
+    # net = pixel_cnn.PixelCNN(1, 32, 64)
+    net = pixel_cnn.AutoEncoder(opts.batch_size, cuda_dev, opts.max_w)
 
     saved_state = torch.load(opts.load, map_location='cpu')
     net.load_state_dict(saved_state)
@@ -65,10 +104,10 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--seed", type=int, default=0)
     parser.add_argument("-c", "--use_cuda", type=int, default=None)
     parser.add_argument("--load", default=None)
-    parser.add_argument("--left_pad", type=int, default=512)
     parser.add_argument("--input", default=None)
-    parser.add_argument("--initial_frames", "-i", type=int, default=100)
+    parser.add_argument("--initial_frames", "-i", type=int, default=256)
     parser.add_argument("--save", default='generated.npy')
+    parser.add_argument("--batch_size", type=int, default=64)
     args = parser.parse_args()
     main(args)
 

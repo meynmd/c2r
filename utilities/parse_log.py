@@ -1,13 +1,20 @@
-import os
-import argparse
+import os, argparse, tempfile
+
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
+
 
 p = argparse.ArgumentParser()
 p.add_argument("logfile")
 p.add_argument("outfile")
 args = p.parse_args()
 
+
 outfile = open(os.path.join(os.getcwd(), args.outfile), 'w')
 outfile.write('epoch,train_loss,val_loss\n')
+
+csv = tempfile.TemporaryFile()
 
 with open(os.path.join(os.getcwd(), args.logfile), 'r') as fp:
     lines = fp.readlines()

@@ -1,10 +1,10 @@
 import torch.nn as nn
-from conv_blocks import MaskBConvResidualBlock, mask_a_conv
+from conv_blocks import MaskBConvResidualBlock, MaskAConv # mask_a_conv
 
 class PixelCNN(nn.Module):
     def __init__(self, in_channels=1, h_channels=64, out_h_channels=1024):
         super(PixelCNN, self).__init__()
-        self.a_conv = mask_a_conv(in_channels, 2*h_channels, 7, stride=1, padding=6, dilation=2)
+        self.a_conv = MaskAConv(in_channels, 2*h_channels, 7, stride=1, padding=6, dilation=2)
         self.b_conv = nn.Sequential(
             *[MaskBConvResidualBlock(h_channels, kernel_size=3, stride=1, padding=2, dilation=2) for _ in range(9)]
         )
