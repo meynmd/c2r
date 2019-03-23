@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 
 import pr_dataset
+
 # import baseline.rnn_baseline as auto
 # import v5.cnn as auto
 import v5.crnnv6 as auto
@@ -45,11 +46,38 @@ def count_on_off_performance(target, predicted):
     gt_onsets, gt_offsets = (gt_mask > 0).type(torch.LongTensor), (gt_mask < 0).type(torch.LongTensor)
     pred_onsets, pred_offsets = (p_mask > 0).type(torch.LongTensor), (p_mask < 0).type(torch.LongTensor)
 
-    tp = gt_onsets*pred_onsets
-    tn = gt_offsets*pred_offsets
-    fp = pred_onsets - tp
-    fn = pred_offsets - tn
-    return tuple((t.sum().item() for t in (tp, fp, fn)))
+    tp_on = gt_onsets*pred_onsets
+    fp_on = pred_onsets - tp_on
+    fn_on = torch.max(gt_onsets - pred_onsets, torch.zeros(gt_onsets.shape).type(torch.LongTensor))
+
+    tp_off = gt_offsets*pred_offsets
+    fp_off = pred_offsets - tp_off
+    fn_off = torch.max(gt_offsets - pred_offsets, torch.zeros(gt_offsets.shape).type(torch.LongTensor))
+
+    return tuple((t.sum().item() for t in (tp_on, fp_on, fn_on, tp_off, fp_off, fn_off)))
+
+
+def count_on_off_performance_batch(target, predicted):
+    y = target.cpu().type(torch.FloatTensor)
+    yh = predicted.cpu().type(torch.FloatTensor)
+
+    f = torch.FloatTensor([[[[-1., 1., 0.]]]])
+    gt_mask = F.conv2d(y, f, padding=(0, 1)).squeeze(1)
+    p_mask = F.conv2d(yh, f, padding=(0, 1)).squeeze(1)
+
+    # mask:  1 means note-on, -1 means note-off
+    gt_onsets, gt_offsets = (gt_mask > 0).type(torch.LongTensor), (gt_mask < 0).type(torch.LongTensor)
+    pred_onsets, pred_offsets = (p_mask > 0).type(torch.LongTensor), (p_mask < 0).type(torch.LongTensor)
+
+    tp_on = gt_onsets*pred_onsets
+    fp_on = pred_onsets - tp_on
+    fn_on = torch.max(gt_onsets - pred_onsets, torch.zeros(gt_onsets.shape).type(torch.LongTensor))
+
+    tp_off = gt_offsets*pred_offsets
+    fp_off = pred_offsets - tp_off
+    fn_off = torch.max(gt_offsets - pred_offsets, torch.zeros(gt_offsets.shape).type(torch.LongTensor))
+
+    return tuple((t.sum(dim=2).sum(dim=1) for t in (tp_on, fp_on, fn_on, tp_off, fp_off, fn_off)))
 
 
 '''
@@ -89,7 +117,7 @@ def test(net, data, max_w, batch_size=32, cuda_dev=None, labels=None, threshold=
 
     p_total, r_total, f_total, err_t_total, err_s_total, err_m_total, err_f_total, num_pr_total = \
         0., 0., 0., 0., 0., 0., 0., 0
-    nb_p_total, nb_r_total, nb_f_total = 0., 0., 0.
+    on_p_total, on_r_total, on_f_total, off_p_total, off_r_total, off_f_total = 0., 0., 0., 0., 0., 0.
 
     for i, label in labels:
         class_datapoints = list(data.get_from_class(label))
@@ -113,7 +141,8 @@ def test(net, data, max_w, batch_size=32, cuda_dev=None, labels=None, threshold=
                 x_batches = [x.unsqueeze(0).unsqueeze(0)]
 
             x_tp, x_fp, x_fn, err_sum, subst_sum, miss_sum, fa_sum, n_ref_sum = 0., 0., 0., 0., 0., 0., 0., 0.
-            x_true_onsets, x_false_offsets, x_false_onsets = 0., 0., 0.
+            x_true_onsets, x_false_offsets, x_false_onsets, x_missed_onsets, x_true_offsets, x_missed_offsets = \
+                0., 0., 0., 0., 0., 0.
             for j, batch in enumerate(x_batches):
                 target = batch.clone().type(torch.LongTensor).squeeze(1)
                 pr_size = target.shape[1] * target.shape[2]
@@ -124,168 +153,182 @@ def test(net, data, max_w, batch_size=32, cuda_dev=None, labels=None, threshold=
 
                 y_hat = (p >= threshold).type(torch.LongTensor)
 
-                # if cuda_dev is not None:
-                #     y_hat = y_hat.cuda(cuda_dev)
-
-                # pred_minus_targ = y_hat - target
-                # fp = (pred_minus_targ == 1).type(torch.LongTensor)
-                # fn = (pred_minus_targ == -1).type(torch.LongTensor)
-                # tp = y_hat*target
-
-                # true_onsets, false_onsets, false_offsets = find_boundary_tp_tn(target, y_hat)
-                # batch_tp, batch_fp, batch_fn = (x.sum().item() for x in (tp, fp, fn))
-                # batch_true_onsets, batch_false_onsets, batch_false_offsets = (x.sum().item() for x in (true_onsets, false_onsets, false_offsets))
-
                 (batch_tp, batch_fp, batch_fn), (err_count, subst_count, miss_count, fa_count, n_ref_count) = \
                     count_performance(target, y_hat)
 
-                batch_true_onsets, batch_false_onsets, batch_false_offsets = count_on_off_performance(target, y_hat)
-
-                # num_tn = pr_size - num_tp - num_fp - num_fn
+                tp_on, fp_on, fn_on, tp_off, fp_off, fn_off = count_on_off_performance(target, y_hat)
 
                 x_tp += batch_tp
                 x_fp += batch_fp
                 x_fn += batch_fn
                 # x_tn += num_tn
 
-                x_true_onsets += batch_true_onsets
-                x_false_onsets += batch_false_onsets
-                x_false_offsets += batch_false_offsets
+                x_true_onsets += tp_on
+                x_false_onsets += fp_on
+                x_missed_onsets += fn_on
 
-                # calculate Poliner & Ellis error for batch
-                # n_ref, n_sys = torch.sum(target, dim=1), torch.sum(y_hat, dim=1)
-                # err_sum += torch.sum(torch.max(n_ref, n_sys) - torch.sum(tp, dim=1)).item()
-                # subst_sum += torch.sum(torch.min(n_ref, n_sys) - torch.sum(tp, dim=1)).item()
+                x_true_offsets += tp_off
+                x_false_offsets += fp_off
+                x_missed_offsets += fn_off
+
                 err_sum += err_count
                 subst_sum += subst_count
-
-                # zero = torch.zeros(n_ref.shape).type(torch.LongTensor)
-                # if cuda_dev is not None:
-                #     zero = zero.cuda(cuda_dev)
-
-                # miss_sum += torch.sum(torch.max(zero, n_ref - n_sys)).item()
-                # fa_sum += torch.sum(torch.max(zero, n_sys - n_ref)).item()
                 miss_sum += miss_count
                 fa_sum += fa_count
 
-                # n_ref_sum += torch.sum(target).item()
                 n_ref_sum += n_ref_count
-
-            # x_tp, x_fp, x_fn = (m/float(num_samples) for m in (x_tp, x_fp, x_fn))
-
-            # print('{}\n\ttp: {}\tfp: {}\tfn: {}'.format(os.path.basename(x_path), x_tp, x_fp, x_fn))
 
             # calculate P, R, F measure
             precision = x_tp/(x_tp + x_fp)
             recall = x_tp/(x_tp + x_fn)
-            f_score = 2*precision*recall/(precision + recall)
+            f_score = 2*precision*recall/(precision + recall + 1e-10)
 
             # calculate measures for note onsets, offsets
-            nb_precision = x_true_onsets/(x_true_onsets + x_false_onsets)
-            nb_recall = x_true_onsets/(x_true_onsets + x_false_offsets)
-            nb_f_score = 2*nb_precision*nb_recall/(nb_precision + nb_recall)
+            on_precision = x_true_onsets/(x_true_onsets + x_false_onsets)
+            on_recall = x_true_onsets/(x_true_onsets + x_missed_onsets)
+            on_f_score = 2*on_precision*on_recall/(on_precision + on_recall + 1e-10)
+
+            off_precision = x_true_offsets/(x_true_offsets + x_false_offsets)
+            off_recall = x_true_offsets/(x_true_offsets + x_missed_offsets)
+            off_f_score = 2*off_precision*off_recall/(off_precision + off_recall + 1e-10)
 
             err_total = err_sum/float(n_ref_sum)
             err_subs = subst_sum/float(n_ref_sum)
             err_miss = miss_sum/float(n_ref_sum)
             err_fa = fa_sum/float(n_ref_sum)
 
-            # print('\tP: {:.4}\tR: {:.4}\tF: {:.4}'.format(precision, recall, f_score))
-            # print(
-            #     'e_tot (P&E): {:.4}\te_subs: {:.4}\te_miss: {:.4}\te_fa: {:.4}'.format(
-            #         err_total, err_subs, err_miss, err_fa
-            # ))
-            sys.stdout.flush()
-
             p_total += precision
             r_total += recall
             f_total += f_score
 
-            nb_p_total += nb_precision
-            nb_r_total += nb_recall
-            nb_f_total += nb_f_score
+            on_p_total += on_precision
+            on_r_total += on_recall
+            on_f_total += on_f_score
+            off_p_total += off_precision
+            off_r_total += off_recall
+            off_f_total += off_f_score
 
             err_t_total += err_total
             err_s_total += err_subs
             err_m_total += err_miss
             err_f_total += err_fa
 
-        # print('\navg measures for class {}'.format(label))
-        # print('P: {:.4}\tR: {:.4}\tF: {:.4}'.format(p_sum/num_per_class, r_sum/num_per_class, f_sum/num_per_class))
-        # print(80*'*')
-        # sys.stdout.flush()
-
     print('\noverall stats:\nP: {:.4}\tR: {:.4}\tF: {:.4}'.format(
         p_total/num_pr_total, r_total/num_pr_total, f_total/num_pr_total)
     )
-    print('err_tot: {:.4}\terr_subs: {:.4}\terr_miss: {:.4}\terr_fa: {:.4}'.format(
+    print('\nerr_tot: {:.4}\terr_subs: {:.4}\terr_miss: {:.4}\terr_fa: {:.4}'.format(
         err_t_total/num_pr_total, err_s_total/num_pr_total, err_m_total/num_pr_total, err_f_total/num_pr_total
     ))
 
-    print('nb_precision: {:.4}\tnb_recall: {:.4}\tnb_f_measure: {:.4}'.format(
-        nb_p_total/num_pr_total, nb_r_total/num_pr_total, nb_f_total/num_pr_total
+    print('\nonset precision: {:.4}\tonset recall: {:.4}\tonset f-measure: {:.4}'.format(
+        on_p_total/num_pr_total, on_r_total/num_pr_total, on_f_total/num_pr_total
     ))
 
+    print('\noffset precision: {:.4}\toffset recall: {:.4}\toffset f-measure: {:.4}'.format(
+        off_p_total/num_pr_total, off_r_total/num_pr_total, off_f_total/num_pr_total
+    ))
+
+    return (p_total/num_pr_total, r_total/num_pr_total, f_total/num_pr_total), \
+           (on_p_total/num_pr_total, on_r_total/num_pr_total, on_f_total/num_pr_total), \
+           (off_p_total/num_pr_total, off_r_total/num_pr_total, off_f_total/num_pr_total)
 
 
-def roc(net, data, max_w, batch_size=32, cuda_dev=None, increment=0.05):
+'''
+choose best threshold based on harmonic mean combination of onset and offset f-measure
+
+with this batching method, stride has to be set to max_w, otherwise calculations will not be quite correct
+'''
+def roc_select(net, data, max_w, batch_size=32, cuda_dev=None, labels=None, num_per_class=None,
+               increment=0.05, on_weight=0.5):
     net.eval()
     stride = max_w
+    if labels is None:
+        labels = data.idx2name.items()
 
-    p_sum, r_sum, f_sum = (torch.zeros(int(1./increment)) for _ in range(3))
-    for i in range(len(data)):
-        x, _ = data.__getitem__(i)
-        net.eval()
-        tf_per_batch = batch_size*stride
-        if x.shape[1] > max_w:
-            x_batches = crop_and_batch(x, max_w, stride, batch_size)
+    num_pr_total = 0.
+    on_p_total, on_r_total, on_f_total, off_p_total, off_r_total, off_f_total = \
+        (torch.zeros(int(1. / increment)) for _ in range(6))
+
+    for i, label in labels:
+        class_datapoints = list(data.get_from_class(label))
+
+        if num_per_class is None:
+            num_per_class = len(class_datapoints)
         else:
-            if x.shape[1] < max_w:
-                x = F.pad(x, (max_w - x.shape[1], 0))
-            x_batches = [x.unsqueeze(0).unsqueeze(0)]
+            num_per_class = min(num_per_class, len(class_datapoints))
 
-        x_tp, x_fp, x_fn, n_ref_sum = (torch.zeros(int(1./increment)) for _ in range(4))
+        class_datapoints = class_datapoints[:num_per_class]
+        num_pr_total += num_per_class
 
-        for j, batch in enumerate(x_batches):
-            target = batch.clone().squeeze(1)
-            if cuda_dev is not None:
-                batch, target = batch.cuda(cuda_dev), target.cuda(cuda_dev)
-            z = net(batch)
-            p = torch.sigmoid(z).squeeze(1)
+        for (x, y), _ in class_datapoints:
+            net.eval()
+            tf_per_batch = batch_size * stride
+            if x.shape[1] > max_w:
+                x_batches = crop_and_batch(x, max_w, stride, batch_size)
+            else:
+                if x.shape[1] < max_w:
+                    x = F.pad(x, (max_w - x.shape[1], 0))
+                x_batches = [x.unsqueeze(0).unsqueeze(0)]
 
-            y_hat = torch.stack([(p >= th).type(torch.FloatTensor) for th in np.arange(0., 1., increment)], dim=0)
-            target = torch.stack([target for _ in range(int(1./increment))], dim=0)
+            x_true_onsets, x_false_offsets, x_false_onsets, x_missed_onsets, x_true_offsets, x_missed_offsets = \
+                (torch.zeros(int(1. / increment)) for _ in range(6))
 
-            if cuda_dev is not None:
-                y_hat = y_hat.cuda(cuda_dev)
+            for j, batch in enumerate(x_batches):
+                target = batch.clone().type(torch.LongTensor)
+                if cuda_dev is not None:
+                    batch, target = batch.cuda(cuda_dev), target.cuda(cuda_dev)
+                z = net(batch)
+                p = torch.sigmoid(z)
 
-            pred_minus_targ = y_hat - target
-            fp = (pred_minus_targ == 1).type(torch.FloatTensor)
-            fn = (pred_minus_targ == -1).type(torch.FloatTensor)
-            tp = y_hat*target
-            batch_tp, batch_fp, batch_fn = (x.sum(dim=3).sum(dim=2).sum(dim=1) for x in (tp, fp, fn))
+                y_hat = torch.cat([(p >= th).type(torch.FloatTensor) for th in np.arange(0., 1., increment)], dim=0)
+                target = torch.cat([target for _ in range(int(1. / increment))], dim=0)
 
-            x_tp += batch_tp.cpu()
-            x_fp += batch_fp.cpu()
-            x_fn += batch_fn.cpu()
+                tp_on, fp_on, fn_on, tp_off, fp_off, fn_off = count_on_off_performance_batch(target, y_hat)
 
-        # calculate P, R, F measure
-        precision = x_tp/(x_tp + x_fp + 1e-10)
-        recall = x_tp/(x_tp + x_fn + 1e-10)
-        f_score = 2*precision*recall/(precision + recall + 1e-10)
+                tp_on, fp_on, fn_on, tp_off, fp_off, fn_off = (t.view(int(1./increment), -1).sum(dim=1) \
+                                                               for t in (tp_on, fp_on, fn_on, tp_off, fp_off, fn_off))
 
-        p_sum += precision
-        r_sum += recall
-        f_sum += f_score
+                x_true_onsets += tp_on.type(torch.FloatTensor)
+                x_false_onsets += fp_on.type(torch.FloatTensor)
+                x_missed_onsets += fn_on.type(torch.FloatTensor)
 
-    num_pr = len(data)
-    print('Threshold: Precision,Recall,F-measure')
-    for i in range(p_sum.shape[0]):
-        print('{:.3}: {:.4},{:.4},{:.4}'.format(i*increment, p_sum[i]/num_pr, r_sum[i]/num_pr, f_sum[i]/num_pr))
+                x_true_offsets += tp_off.type(torch.FloatTensor)
+                x_false_offsets += fp_off.type(torch.FloatTensor)
+                x_missed_offsets += fn_off.type(torch.FloatTensor)
 
-    best = torch.argmax(f_sum, dim=0).item()
-    print('choosing threshold {:.4}'.format(best*increment))
-    return best*increment
+            # calculate measures for note onsets, offsets
+            on_precision = x_true_onsets / (x_true_onsets + x_false_onsets + 1e-10)
+            on_recall = x_true_onsets / (x_true_onsets + x_missed_onsets + 1e-10)
+            on_f_score = 2 * on_precision * on_recall / (on_precision + on_recall + 1e-10)
+
+            off_precision = x_true_offsets / (x_true_offsets + x_false_offsets + 1e-10)
+            off_recall = x_true_offsets / (x_true_offsets + x_missed_offsets + 1e-10)
+            off_f_score = 2 * off_precision * off_recall / (off_precision + off_recall + 1e-10)
+
+            on_p_total += on_precision
+            on_r_total += on_recall
+            on_f_total += on_f_score
+            off_p_total += off_precision
+            off_r_total += off_recall
+            off_f_total += off_f_score
+
+    on_p_avg, on_r_avg, on_f_avg, off_p_avg, off_r_avg,off_f_avg = \
+        (t/num_pr_total for t in (on_p_total, on_r_total, on_f_total, off_p_total, off_r_total,off_f_total))
+
+    avg_f_hmean = 2*on_f_avg*off_f_avg/(on_f_avg + off_f_avg + 1e-10)
+
+    print('\nthreshold          on F-measure      off F-measure     h. mean')
+    for j in range(int(1. / increment)):
+        print('{:.4f}              {:.4f}              {:.4f}              {:.4f}'.format(
+            j*increment, on_f_avg[j].item(), off_f_avg[j].item(),
+            avg_f_hmean[j].item()
+        ))
+
+    f_argmax = torch.argmax(avg_f_hmean, dim=0).item()
+    best_threshold = f_argmax*increment
+    print('choosing threshold {:.4} based on ROC curve calculated on validation set'.format(best_threshold))
+
+    return best_threshold
 
 
 def main(opts):
@@ -331,7 +374,7 @@ def main(opts):
 
     with torch.no_grad():
         if opts.threshold is None:
-            threshold = roc(net, val_set, opts.max_w, batch_size=opts.batch_size, cuda_dev=opts.use_cuda, increment=0.05)
+            threshold = roc_select(net, val_set, opts.max_w, batch_size=opts.batch_size, cuda_dev=opts.use_cuda, increment=0.05)
         else:
             threshold = opts.threshold
 

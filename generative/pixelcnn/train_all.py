@@ -14,11 +14,10 @@ from torch.autograd import Variable
 
 import pr_dataset
 
-# import v4.cnn as autoencoder
-# import v4.rnn_v2 as autoencoder
-# import baseline.rnn_baseline as autoencoder
+import baseline.rnn_baseline as autoencoder
 # import v5.crnnv6 as autoencoder
-import v5.cnn as autoencoder
+# import v5.cnn as autoencoder
+# import v5.crnnv7 as autoencoder
 
 import focal_loss
 
@@ -190,13 +189,13 @@ def main(opts):
     #                               rnn_dim=opts.rnn_size, ch_downsample=opts.ch_down, ch_upsample=opts.ch_up)
 
     # rnn
-    # net = autoencoder.AutoEncoder(rnn_size=opts.rnn_size, rnn_layers=1, batch_size=opts.batch_size)
+    net = autoencoder.AutoEncoder(rnn_size=opts.rnn_size, rnn_layers=1, batch_size=opts.batch_size)
 
     # crnn
     # net = autoencoder.AutoEncoder(batch_size=opts.batch_size, rnn_size=opts.rnn_size, rnn_layers=1, use_cuda=opts.use_cuda, max_w=opts.max_w)
 
     # cnn
-    net = autoencoder.AutoEncoder(batch_size=opts.batch_size, use_cuda=opts.use_cuda, max_w=opts.max_w)
+    # net = autoencoder.AutoEncoder(batch_size=opts.batch_size, use_cuda=opts.use_cuda, max_w=opts.max_w)
 
     if opts.load:
         saved_state = torch.load(opts.load, map_location='cpu')
