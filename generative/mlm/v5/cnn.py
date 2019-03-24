@@ -175,9 +175,9 @@ class Upsample(nn.Module):
         return self.conv_layers(x)
 
 
-class AutoEncoder(nn.Module):
+class LanguageModeler(nn.Module):
     def __init__(self, batch_size, rnn_size=1024, ch_downsample=64, ch_upsample=64, rnn_layers=1, use_cuda=None, max_w=None):
-        super(AutoEncoder, self).__init__()
+        super(LanguageModeler, self).__init__()
 
         self.name = 'cnn autoencoder v5\n'
         print(self.name)

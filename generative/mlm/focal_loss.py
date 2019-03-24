@@ -8,14 +8,9 @@ class FocalLoss(nn.Module):
         self.alpha, self.gamma = alpha, gamma
 
     def forward(self, z, y):
-        # batch_size, _, h, w = z.shape
         batch_size, w, h = z.shape
-
-        # z, y = z.view(batch_size, h, w), y.view(batch_size, h, w)
-
         p = torch.sigmoid(z)
         p_t = p*y + (1. - p)*(1 - y)
         # w = self.alpha*y + (1. - self.alpha)*(1 - y)
         w = w*torch.pow(1. - p_t, self.gamma)
-        # return F.binary_cross_entropy_with_logits(z, y, w, pos_weight=positive_weight)
         return F.binary_cross_entropy_with_logits(z, y, w)

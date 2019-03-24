@@ -8,8 +8,7 @@ from torch.utils.data.dataloader import DataLoader
 from torch.autograd import Variable
 
 import pr_dataset
-# import pixel_cnn
-import v2.cnn as auto
+import v5.cnn as model
 
 def crop_and_batch(orig_tensor, window_len, stride, max_batch):
     assert(orig_tensor.shape[1] >= window_len)
@@ -92,7 +91,7 @@ def main(opts):
     label2idx = {l : i for (i, l) in enumerate(labels)}
 
     # net = pixel_cnn.PixelCNN(1, 32, 64)
-    net = auto.AutoEncoder(opts.batch_size, cuda_dev, opts.max_w)
+    net = model.LanguageModeler(opts.batch_size, cuda_dev, opts.max_w)
     for param in net.parameters():
         param.requires_grad = False
 

@@ -33,7 +33,6 @@ if __name__ == '__main__':
     save_path = os.path.join(os.getcwd(), args.save)
 
     raw_values = np.load(scale_arr_path)
-
     raw_values = np.concatenate([np.zeros(1), raw_values])
 
     # normalized = raw_values - np.ones(raw_values.shape)*raw_values.min()

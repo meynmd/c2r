@@ -8,7 +8,7 @@ import pr_dataset
 
 # import baseline.rnn_baseline as auto
 # import v5.cnn as auto
-import v5.crnnv6 as auto
+import v5.crnn_v5 as model
 
 
 def crop_and_batch(orig_tensor, window_len, stride, max_batch):

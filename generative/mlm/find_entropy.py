@@ -9,35 +9,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-import pixel_cnn
+import v5.cnn as cnn
 
-
-# def make_batch(orig_tens, t_0, delta_t, stride, batch_size):
-#     # orig_tens: 1, ch, h, w
-#     _, channels, _, total_w = orig_tens.shape
-#     batch = []
-#     for i in range(batch_size):
-#         start = t_0 + i*stride
-#         end = start + delta_t
-#         if end >= total_w:
-#             break
-#         else:
-#             window = orig_tens[:, :, :, start : end]
-#             window[:, :, :, -1] = 0.
-#             batch.append(window)
-#     if batch == []:
-#         return None
-#     else:
-#         return torch.cat(batch, 0)
-#
-#
-# def make_batches(orig_tens, delta_t, stride, batch_size):
-#     batch_w = batch_size*stride
-#     _, channels, _, total_w = orig_tens.shape
-#     for i in range(0, total_w, batch_w):
-#         batch = make_batch(orig_tens, i, delta_t, stride, batch_size)
-#         if batch is not None:
-#             yield batch
 
 def make_batches(orig_tens, delta_t, batch_size):
     _, channels, _, total_w = orig_tens.shape
@@ -121,7 +94,7 @@ def main(opts):
     pr_tensor = pr_tensor.unsqueeze(0).unsqueeze(0)
 
     # initialize network
-    net = pixel_cnn.PixelCNN(1, 32, 64)
+    net = cnn.LanguageModeler(1, 32, 64)
 
     if opts.load:
         saved_state = torch.load(opts.load, map_location='cpu')

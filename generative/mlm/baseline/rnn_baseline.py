@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 
-class AutoEncoder(nn.Module):
+class LanguageModeler(nn.Module):
     def __init__(self, rnn_size, rnn_layers, batch_size, use_cuda=None):
-        super(AutoEncoder, self).__init__()
+        super(LanguageModeler, self).__init__()
         self.name = 'baseline LSTM dim {}'.format(rnn_size)
         self.rnn_dim = rnn_size
         self.rnn_layers = rnn_layers

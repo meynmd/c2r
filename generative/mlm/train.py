@@ -14,10 +14,9 @@ from torch.autograd import Variable
 
 import pr_dataset
 
-import baseline.rnn_baseline as autoencoder
-# import v5.crnnv6 as autoencoder
-# import v5.cnn as autoencoder
-# import v5.crnnv7 as autoencoder
+# import baseline.rnn_baseline as model
+# import v5.crnn_v5_1 as model
+import v5.cnn as model
 
 import focal_loss
 
@@ -108,10 +107,6 @@ def find_loss(net, dataloader, loss_fn, cuda_dev=None, max_w=1024):
         bce_loss = F.binary_cross_entropy_with_logits(yh.squeeze(1).transpose(1, 2), target.squeeze(1).transpose(1, 2))
         total_bce_loss += bce_loss.cpu().item()
 
-        # new_bce_loss = F.binary_cross_entropy_with_logits(yh.squeeze(1).transpose(1, 2), target.squeeze(1).transpose(1, 2))
-        # if new_bce_loss.cpu().item() - bce_loss.cpu().item() > 0.0001:
-        #     print('new BCE loss: {}\told BCE loss: {}'.format(new_bce_loss.cpu().item(), bce_loss.cpu().item()))
-
         loss = loss_fn(yh.squeeze(1).transpose(1, 2), target.squeeze(1).transpose(1, 2))
         total_loss += loss.cpu().item()
 
@@ -151,7 +146,6 @@ def extract_first_number(s):
 
 def find_neg_pos_ratio(dataloader):
     # batch is a list of 2d tensors
-    # num_ones = sum([sum([torch.sum(x) for x in batch]) for (_, batch) in enumerate(dataloader)])
     num_ones, num_elem = 0, 0
     for (_, (batch, _)) in enumerate(dataloader):
         num_ones += sum([torch.sum(x) for x in batch])
@@ -184,18 +178,14 @@ def main(opts):
 
     print('\ndataset sizes:\t{}\t{}\n'.format(*[(p, len(d)) for (p, d) in dataloaders.items()]))
 
-    # initialize network / load weights
-    # net = autoencoder.AutoEncoder(opts.batch_size, use_cuda=cuda_dev, max_w=opts.max_w,
-    #                               rnn_dim=opts.rnn_size, ch_downsample=opts.ch_down, ch_upsample=opts.ch_up)
-
     # rnn
-    net = autoencoder.AutoEncoder(rnn_size=opts.rnn_size, rnn_layers=1, batch_size=opts.batch_size)
+    # net = model.LanguageModeler(rnn_size=opts.rnn_size, rnn_layers=1, batch_size=opts.batch_size)
 
     # crnn
-    # net = autoencoder.AutoEncoder(batch_size=opts.batch_size, rnn_size=opts.rnn_size, rnn_layers=1, use_cuda=opts.use_cuda, max_w=opts.max_w)
+    # net = model.LanguageModeler(batch_size=opts.batch_size, rnn_size=opts.rnn_size, rnn_layers=1, use_cuda=opts.use_cuda, max_w=opts.max_w)
 
     # cnn
-    # net = autoencoder.AutoEncoder(batch_size=opts.batch_size, use_cuda=opts.use_cuda, max_w=opts.max_w)
+    net = model.LanguageModeler(batch_size=opts.batch_size, use_cuda=opts.use_cuda, max_w=opts.max_w)
 
     if opts.load:
         saved_state = torch.load(opts.load, map_location='cpu')
@@ -212,11 +202,7 @@ def main(opts):
     optim = torch.optim.SGD(net.parameters(), float(opts.init_lr), momentum=0.9)
 
     left_pad = opts.left_pad
-    # if left_pad is None:
-        # left_pad = opts.max_w - 1
-
     fl_gamma = opts.focal_gamma
-    # loss_function = focal_loss.FocalLoss(gamma=2.)
 
     if opts.pos_w is None:
         print('Focal loss, gamma={}'.format(fl_gamma), file=sys.stderr)
