@@ -1,3 +1,8 @@
+'''
+This is an unsuccessful attempt at classifying by maximizing likelihood given by generative model
+where each composer has its own generative model
+
+'''
 import argparse, sys, math, os, glob
 import numpy as np
 

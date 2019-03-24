@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-# masked convolutional network, as in jzbontar
+# masked convolutional network, as implemented by jzbontar
 
 class MaskedConv2d(torch.nn.Conv2d):
     def __init__(self, mask, *args, **kwargs):

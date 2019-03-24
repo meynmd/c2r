@@ -1,3 +1,7 @@
+'''
+script to track entropy values of predicted pitch activations at each time frame (a potentially interesting application
+of mlm)
+'''
 import argparse
 import os
 import sys

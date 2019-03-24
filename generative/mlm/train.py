@@ -1,5 +1,8 @@
+'''
+training script for generative model
+trains generative model on whole dataset
+'''
 import argparse
-import glob
 import os
 import sys
 from itertools import takewhile
@@ -14,9 +17,9 @@ from torch.autograd import Variable
 
 import pr_dataset
 
-# import baseline.rnn_baseline as model
-# import v5.crnn_v5_1 as model
-import v5.cnn as model
+# # import baseline.rnn_baseline as model
+# # import v5.crnn_v5_1 as model
+# import v5.cnn as model
 
 import focal_loss
 
@@ -178,14 +181,26 @@ def main(opts):
 
     print('\ndataset sizes:\t{}\t{}\n'.format(*[(p, len(d)) for (p, d) in dataloaders.items()]))
 
-    # rnn
-    # net = model.LanguageModeler(rnn_size=opts.rnn_size, rnn_layers=1, batch_size=opts.batch_size)
+    # # rnn
+    # # net = model.LanguageModeler(rnn_size=opts.rnn_size, rnn_layers=1, batch_size=opts.batch_size)
+    #
+    # # crnn
+    # # net = model.LanguageModeler(batch_size=opts.batch_size, rnn_size=opts.rnn_size, rnn_layers=1, use_cuda=opts.use_cuda, max_w=opts.max_w)
+    #
+    # # cnn
+    # net = model.LanguageModeler(batch_size=opts.batch_size, use_cuda=opts.use_cuda, max_w=opts.max_w)
 
-    # crnn
-    # net = model.LanguageModeler(batch_size=opts.batch_size, rnn_size=opts.rnn_size, rnn_layers=1, use_cuda=opts.use_cuda, max_w=opts.max_w)
+    if opts.arch == 'crnn':
+        import v5.crnn_v5_1 as crnn
+        net = crnn.LanguageModeler(batch_size=opts.batch_size, rnn_size=opts.rnn_size, rnn_layers=1, use_cuda=opts.use_cuda, max_w=opts.max_w)
 
-    # cnn
-    net = model.LanguageModeler(batch_size=opts.batch_size, use_cuda=opts.use_cuda, max_w=opts.max_w)
+    elif opts.arch == 'baseline':
+        import baseline.rnn_baseline as base
+        net = base.LanguageModeler(rnn_size=opts.rnn_size, rnn_layers=1, batch_size=opts.batch_size, use_cuda=opts.use_cuda)
+
+    elif opts.arch == 'cnn':
+        import v5.cnn as cnn
+        net = cnn.LanguageModeler(batch_size=opts.batch_size, use_cuda=opts.use_cuda, max_w=opts.max_w)
 
     if opts.load:
         saved_state = torch.load(opts.load, map_location='cpu')
@@ -261,6 +276,8 @@ if __name__ == "__main__":
     parser.add_argument("--rnn_size", type=int, default=2048)
     parser.add_argument("--pos_w", default=None)
     parser.add_argument("--focal_gamma", type=float, default=2.)
+    parser.add_argument("--arch", default="baseline")
+
     args = parser.parse_args()
 
     print(args.__dict__)

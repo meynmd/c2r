@@ -5,6 +5,11 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.dataloader import default_collate
 
+'''
+This modification of PR dataset is for getting examples from only one composer
+Not using it at the moment
+'''
+
 class ComposerDataset(Dataset):
     # dataset representing music scores as 2d matrices (pitch x time)
     def __init__(self, data_root, label_dict_file, phase="train", seed=0, classname=None):

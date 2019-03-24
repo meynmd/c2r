@@ -1,4 +1,9 @@
-import argparse, sys, math, os, glob
+# evaluation script
+# calculates P,R,F for all frames, for onsets and for offsets
+# if no threshold specified, will first search ROC curve on validation set to maximize harmonic mean of F-measures for
+# onset and offset
+
+import argparse, sys, math, os
 import numpy as np
 
 import torch
@@ -6,9 +11,9 @@ import torch.nn.functional as F
 
 import pr_dataset
 
-# import baseline.rnn_baseline as auto
-# import v5.cnn as auto
-import v5.crnn_v5 as model
+# # import baseline.rnn_baseline as auto
+# # import v5.cnn as auto
+# import v5.crnn_v5 as model
 
 
 def crop_and_batch(orig_tensor, window_len, stride, max_batch):
@@ -341,14 +346,17 @@ def main(opts):
     val_set = pr_dataset.PianoRollDataset(os.getcwd() + "/" + opts.data_dir, "labels.csv", "val")
     dataset = pr_dataset.PianoRollDataset(os.getcwd() + "/" + opts.data_dir, "labels.csv", "test")
 
-    # crnn
-    net = auto.AutoEncoder(batch_size=opts.batch_size, rnn_size=opts.rnn_size, rnn_layers=1, use_cuda=opts.use_cuda, max_w=opts.max_w)
+    if opts.arch == 'crnn':
+        from v5.crnn_v5_1 import LanguageModeler
+        net = LanguageModeler(batch_size=opts.batch_size, rnn_size=opts.rnn_size, rnn_layers=1, use_cuda=opts.use_cuda, max_w=opts.max_w)
 
-    # rnn
-    # net = auto.AutoEncoder(rnn_size=opts.rnn_size, rnn_layers=1, batch_size=opts.batch_size, use_cuda=opts.use_cuda)
+    elif opts.arch == 'baseline':
+        from baseline.rnn_baseline import LanguageModeler
+        net = LanguageModeler(rnn_size=opts.rnn_size, rnn_layers=1, batch_size=opts.batch_size, use_cuda=opts.use_cuda)
 
-    # cnn
-    # net = auto.AutoEncoder(batch_size=opts.batch_size, use_cuda=opts.use_cuda, max_w=opts.max_w)
+    elif opts.arch == 'cnn':
+        from v5.cnn import LanguageModeler
+        net = LanguageModeler(batch_size=opts.batch_size, use_cuda=opts.use_cuda, max_w=opts.max_w)
 
     for param in net.parameters():
         param.requires_grad = False
@@ -394,7 +402,7 @@ if __name__ == "__main__":
     parser.add_argument("--classes", nargs='*')
     parser.add_argument("--rnn_size", type=int, default=1024)
     parser.add_argument("--threshold", type=float, default=None)
-    # implement left padding?
+    parser.add_argument("--arch", default="baseline")
 
     args = parser.parse_args()
     main(args)
